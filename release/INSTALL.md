@@ -36,10 +36,18 @@
 Windows 也可下载仓库的 `scripts/install-server-plugin.ps1`，然后运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1 -SillyTavernPath "D:\你的路径\SillyTavern"
+powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1
 ```
 
-脚本会自动下载最新 Release、把旧插件移到酒馆根目录的 `.srl-bridge-backups`、复制新版，并将 `enableServerPlugins` 设为 `true`。安装后仍需完全重启酒馆。
+脚本会自动寻找常见安装位置；找到多个酒馆时让用户选择，找不到时才要求粘贴路径。也可用 `-SillyTavernPath "D:\你的路径\SillyTavern"` 明确指定。它会下载最新 Release、把旧插件移到酒馆根目录的 `.srl-bridge-backups`、复制新版，并将 `enableServerPlugins` 设为 `true`。安装后仍需完全重启酒馆。
+
+Android/Termux、Linux 和 macOS 使用完整包内的 `scripts/install-server-plugin.sh`：
+
+```bash
+bash scripts/install-server-plugin.sh
+```
+
+Termux 官方常见路径 `~/SillyTavern` 会自动识别；失败时使用 `--path "/你的路径/SillyTavern"`。iPhone/iPad 无法本机运行完整酒馆，应在实际运行 SillyTavern 的电脑或服务器安装。
 
 ## 三、跨浏览器连接
 

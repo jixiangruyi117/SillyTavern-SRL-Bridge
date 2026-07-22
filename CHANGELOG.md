@@ -1,5 +1,11 @@
 # 更新记录
 
+## 0.3.3 - 2026-07-23
+
+- Windows 安装器取消必填固定路径：自动搜索常见目录，多个安装可交互选择，并兼容全局模式的独立 `config.yaml`。
+- 新增 Android/Termux、Linux 与 macOS 安装器，自动识别官方常见的 `~/SillyTavern`，也允许显式指定任意路径。
+- 完整发布包内置两种安装脚本；文档明确 iPhone/iPad 只需在真正运行酒馆的电脑或服务器安装。
+
 ## 0.3.2 - 2026-07-23
 
 - 增加 Windows 服务端插件一键安装脚本，自动下载最新 Release、备份旧版并启用 `enableServerPlugins`。

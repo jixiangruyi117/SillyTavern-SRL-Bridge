@@ -43,7 +43,7 @@ https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge.git
 页面扩展运行在浏览器中，而设备码中继必须运行在 SillyTavern 服务端。出于安全原因，页面扩展不能自行向 `SillyTavern/plugins` 写文件，所以服务端插件需要用户明确安装一次。
 
 1. 打开 [最新版本下载页](https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge/releases/latest)。
-2. 下载 `srl-bridge-server-plugin-v0.3.1.zip`；完全不熟悉目录的用户可以下载 `srl-bridge-complete-v0.3.1.zip`。
+2. 下载最新版 `srl-bridge-server-plugin-v*.zip`；完全不熟悉目录的用户可以下载 `srl-bridge-complete-v*.zip`。
 3. 关闭 SillyTavern。
 4. 解压后把服务端的 `srl-bridge` 文件夹放到 `SillyTavern/plugins/srl-bridge`。
 5. 确认最终路径是 `SillyTavern/plugins/srl-bridge/index.mjs`，不要多套一层文件夹。
@@ -56,10 +56,10 @@ https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge.git
 
 酒馆助手和其他页面扩展运行在浏览器里，没有权限写入 `SillyTavern/plugins` 或修改 `config.yaml`，因此不能安全代装服务端插件。Windows 用户可以用仓库提供的安装脚本完成下载、旧版备份、复制和启用配置。
 
-推荐先下载并查看脚本，再在 PowerShell 中运行：
+推荐先下载并查看脚本，再在 PowerShell 中运行。脚本会自动寻找当前目录、桌面、文档、下载目录和各磁盘常见位置中的 SillyTavern；发现多个安装时会让你选择：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1 -SillyTavernPath "D:\SillyTavern\SillyTavern"
+powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1
 ```
 
 [下载安装脚本](https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/scripts/install-server-plugin.ps1)
@@ -67,10 +67,40 @@ powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1 -SillyTaver
 熟悉 PowerShell、确认信任本仓库后，也可以一行安装：
 
 ```powershell
-$code = Invoke-RestMethod "https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/scripts/install-server-plugin.ps1"; & ([scriptblock]::Create($code)) -SillyTavernPath "D:\SillyTavern\SillyTavern"
+$code = Invoke-RestMethod "https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/scripts/install-server-plugin.ps1"; & ([scriptblock]::Create($code))
 ```
 
-请把路径替换成自己的酒馆根目录。脚本不会启动或关闭酒馆；安装完成后必须完全重启 SillyTavern。直接执行网络脚本具有供应链风险，不信任仓库时请继续使用上面的 ZIP 手动安装。
+自动识别失败时再显式指定自己的路径：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1 -SillyTavernPath "E:\你自己的目录\SillyTavern"
+```
+
+使用 `npx sillytavern --global` 的用户还可以追加 `-ConfigPath "$env:APPDATA\SillyTavern\config.yaml"`。脚本不会启动或关闭酒馆；安装完成后必须完全重启 SillyTavern。直接执行网络脚本具有供应链风险，不信任仓库时请继续使用上面的 ZIP 手动安装。
+
+### Android / Termux、Linux 与 macOS
+
+Android 上只有在 Termux 内实际运行 SillyTavern 时才需要安装服务端插件；iPhone/iPad 只是访问其他设备上的酒馆，应在运行酒馆的那台电脑或服务器安装。
+
+Termux 先安装下载与解压工具：
+
+```bash
+pkg install curl unzip -y
+```
+
+然后执行自动识别安装：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/scripts/install-server-plugin.sh)
+```
+
+脚本优先识别官方 Termux 常见的 `~/SillyTavern`，也会在用户目录内查找；存在多个副本时会让用户选择。这里使用进程替换而不是 `curl | bash`，确保安装器仍能读取你的路径选择。Linux/macOS 同样可用。自动识别失败时下载脚本后运行：
+
+```bash
+bash install-server-plugin.sh --path "/你自己的路径/SillyTavern"
+```
+
+为了能够选择路径，不要给交互式安装命令追加 `--non-interactive`。不希望直接执行联网脚本时，请先下载并检查内容再运行。
 
 ## 我应该安装哪个
 

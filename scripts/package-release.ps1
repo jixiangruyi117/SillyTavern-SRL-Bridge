@@ -1,4 +1,4 @@
-param([string]$Version = '0.3.2')
+param([string]$Version = '0.3.3')
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $releaseRoot = Join-Path $repoRoot 'release'
@@ -28,6 +28,9 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'server-plugin\relay.js') -Destinati
 Copy-Item -LiteralPath (Split-Path -Parent $extensionStage) -Destination $completeStage -Recurse
 Copy-Item -LiteralPath (Split-Path -Parent $serverStage) -Destination $completeStage -Recurse
 Copy-Item -LiteralPath (Join-Path $releaseRoot 'INSTALL.md') -Destination (Join-Path $completeStage 'INSTALL.md')
+New-Item -ItemType Directory -Force -Path (Join-Path $completeStage 'scripts') | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts\install-server-plugin.ps1') -Destination (Join-Path $completeStage 'scripts\install-server-plugin.ps1')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts\install-server-plugin.sh') -Destination (Join-Path $completeStage 'scripts\install-server-plugin.sh')
 
 $archives = @(
   @{ Source = (Split-Path -Parent $extensionStage); Name = "srl-bridge-extension-v$Version.zip" },
