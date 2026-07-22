@@ -1,0 +1,65 @@
+.srl-bridge-settings {
+  --srl-accent: #79b79c;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--SmartThemeBorderColor);
+  border-radius: 0.75rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--SmartThemeBlurTintColor) 92%, var(--srl-accent)), var(--SmartThemeBlurTintColor));
+}
+
+.srl-bridge-settings > header {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.srl-bridge-settings h3,
+.srl-bridge-settings p { margin: 0; }
+.srl-bridge-settings p { opacity: 0.72; font-size: 0.9rem; }
+
+.srl-bridge-mark {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  aspect-ratio: 1;
+  border: 1px solid var(--srl-accent);
+  border-radius: 50%;
+  color: var(--srl-accent);
+  font: 700 0.72rem/1 Georgia, serif;
+  letter-spacing: 0.12em;
+}
+
+.srl-bridge-field { display: grid; gap: 0.4rem; }
+.srl-bridge-field span { font-size: 0.82rem; opacity: 0.75; }
+.srl-bridge-field input { width: 100%; min-height: 2.75rem; font-size: 1rem; }
+.srl-bridge-actions { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; margin-top: 0.7rem; }
+.srl-bridge-actions .menu_button { min-height: 2.75rem; }
+
+.srl-bridge-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 75%, transparent);
+  border-radius: 0.55rem;
+}
+.srl-bridge-status i { width: 0.65rem; aspect-ratio: 1; border-radius: 50%; background: #8a8d89; }
+.srl-bridge-status[data-status='connected'] i { background: var(--srl-accent); box-shadow: 0 0 0 0.3rem color-mix(in srgb, var(--srl-accent) 18%, transparent); }
+.srl-bridge-status span { display: grid; }
+.srl-bridge-status small { opacity: 0.68; }
+.srl-bridge-status code { padding: 0.35rem 0.5rem; border: 1px dashed var(--srl-accent); border-radius: 0.35rem; }
+.srl-bridge-help { margin-top: 0.75rem; font-size: 0.88rem; }
+.srl-bridge-help summary { cursor: pointer; min-height: 2.75rem; display: flex; align-items: center; }
+.srl-bridge-log { margin: 0.65rem 0 0; padding-left: 1.25rem; font-size: 0.8rem; opacity: 0.75; }
+.srl-bridge-log:empty { display: none; }
+
+@media (max-width: 600px) {
+  .srl-bridge-settings { padding: 0.85rem; }
+  .srl-bridge-actions { grid-template-columns: 1fr 1fr; }
+  .srl-bridge-status { grid-template-columns: auto minmax(0, 1fr); }
+  .srl-bridge-status code { grid-column: 2; justify-self: start; }
+}

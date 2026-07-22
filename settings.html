@@ -1,0 +1,27 @@
+<section id="srl-bridge-settings" class="srl-bridge-settings">
+  <header>
+    <span class="srl-bridge-mark" aria-hidden="true">SRL</span>
+    <div>
+      <h3>酒馆资源库互传</h3>
+      <p>通过一次性配对，把角色卡、世界书和预设安全传给 SRL。</p>
+    </div>
+  </header>
+  <label class="srl-bridge-field">
+    <span>SRL 地址</span>
+    <input id="srl-bridge-url" type="url" inputmode="url" autocomplete="url" spellcheck="false" />
+  </label>
+  <div class="srl-bridge-actions">
+    <button id="srl-bridge-connect" class="menu_button" type="button">打开并配对</button>
+    <button id="srl-bridge-disconnect" class="menu_button" type="button">断开</button>
+  </div>
+  <div id="srl-bridge-status" class="srl-bridge-status" data-status="idle" role="status">
+    <i aria-hidden="true"></i>
+    <span><strong>尚未连接</strong><small>连接只在当前酒馆页面有效</small></span>
+    <code id="srl-bridge-code" hidden></code>
+  </div>
+  <details class="srl-bridge-help">
+    <summary>连接如何保护我的数据？</summary>
+    <p>扩展只接受你填写的 SRL 域名，使用一次性通道和配对码。文件分块传输并校验 SHA-256，不会开放酒馆端口，也不会上传酒馆账号。</p>
+  </details>
+  <ol id="srl-bridge-log" class="srl-bridge-log" aria-label="最近操作"></ol>
+</section>

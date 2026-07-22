@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRL 酒馆桥接</title>
+    <link rel="stylesheet" href="./bridge.css" />
+  </head>
+  <body>
+    <main id="bridge-state" class="bridge-state" role="status">
+      <span class="bridge-state__pulse" aria-hidden="true"></span>
+      <strong>正在打开 SRL</strong>
+      <small>请保留酒馆页面，本窗口负责安全传输资源。</small>
+    </main>
+    <iframe id="srl-frame" title="SRL 酒馆资源库" allow="clipboard-write"></iframe>
+    <script type="module" src="./bridge.js"></script>
+  </body>
+</html>
