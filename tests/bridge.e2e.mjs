@@ -21,6 +21,16 @@ tavern.on('pageerror', (error) => errors.push(`ST: ${error.message}`))
 try {
   await tavern.goto(process.env.ST_URL || 'http://127.0.0.1:8000', { waitUntil: 'domcontentloaded' })
   await tavern.locator('#srl-bridge-settings').waitFor({ state: 'attached', timeout: 30_000 })
+  const drawerContent = tavern.locator('#srl-bridge-settings .inline-drawer-content')
+  const initiallyCollapsed = await drawerContent.evaluate(
+    (element) => getComputedStyle(element).display === 'none',
+  )
+  if (!initiallyCollapsed) throw new Error('酒馆扩展设置没有默认折叠')
+  await tavern.locator('#srl-bridge-settings .inline-drawer-toggle').evaluate((header) => header.click())
+  const expanded = await drawerContent.evaluate(
+    (element) => getComputedStyle(element).display !== 'none',
+  )
+  if (!expanded) throw new Error('酒馆扩展设置无法展开')
   await tavern.locator('#srl-bridge-url').evaluate((input, value) => {
     input.value = value
     input.dispatchEvent(new Event('change', { bubbles: true }))

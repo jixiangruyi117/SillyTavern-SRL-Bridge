@@ -2,8 +2,16 @@ import { BridgeController } from './modules/BridgeController.js'
 import { TavernAdapter } from './modules/TavernAdapter.js'
 
 const SETTINGS_KEY = 'srl-bridge'
-const DEFAULT_URL = 'http://127.0.0.1:5173/'
 let controller
+
+function defaultSrlUrl() {
+  const host = window.location.hostname || '127.0.0.1'
+  return `http://${host}:5173/`
+}
+
+function isLoopbackUrl(value) {
+  return /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?\/?/i.test(value)
+}
 
 function context() {
   return window.SillyTavern?.getContext?.()
@@ -17,10 +25,12 @@ function saveUrl(value) {
 
 function setStatus(detail) {
   const status = document.getElementById('srl-bridge-status')
+  const headerStatus = document.getElementById('srl-bridge-header-status')
   const code = document.getElementById('srl-bridge-code')
-  if (!status || !code) return
+  if (!status || !headerStatus || !code) return
   status.dataset.status = detail.status
-  status.querySelector('strong').textContent =
+  headerStatus.dataset.status = detail.status
+  const label =
     detail.status === 'connected'
       ? '已连接'
       : detail.status === 'pairing'
@@ -28,7 +38,9 @@ function setStatus(detail) {
         : detail.status === 'waiting'
           ? '正在连接'
           : '尚未连接'
-  status.querySelector('small').textContent = detail.detail
+  status.querySelector('strong').textContent = label
+  status.querySelector('em').textContent = detail.detail
+  headerStatus.querySelector('span').textContent = label === '尚未连接' ? '未连接' : label
   code.hidden = !detail.pairCode || detail.status === 'idle'
   code.textContent = detail.pairCode ? `配对码 ${detail.pairCode}` : ''
 }
@@ -56,7 +68,20 @@ async function initialize() {
 
   const input = document.getElementById('srl-bridge-url')
   const storedUrl = context().extensionSettings[SETTINGS_KEY]?.srlUrl
-  input.value = storedUrl || DEFAULT_URL
+  input.value =
+    storedUrl && !(isLoopbackUrl(storedUrl) && !['127.0.0.1', 'localhost'].includes(location.hostname))
+      ? storedUrl
+      : defaultSrlUrl()
+  const addressHint = document.getElementById('srl-bridge-address-hint')
+  const updateAddressHint = () => {
+    const isLoopback = isLoopbackUrl(input.value.trim())
+    addressHint.dataset.warning = String(isLoopback)
+    addressHint.textContent = isLoopback
+      ? '当前地址只适合这台设备。手机端请改用电脑局域网 IP（例如 192.168.x.x）或已部署的 HTTPS 地址。'
+      : '手机和电脑都需要能够访问这个地址；使用 HTTPS 部署时，酒馆与 SRL 建议保持相同协议。'
+  }
+  updateAddressHint()
+  input.addEventListener('input', updateAddressHint)
   input.addEventListener('change', () => saveUrl(input.value.trim()))
   document.getElementById('srl-bridge-connect').addEventListener('click', () => {
     try {
