@@ -14,6 +14,16 @@
 
 手机端同样可以传输，但手机必须能同时访问酒馆和 SRL。不要在手机上填写 `127.0.0.1`：本地开发应在电脑运行 `pnpm dev:lan`，再填写电脑局域网 IP；已部署时直接填写 SRL 的 HTTPS 地址。扩展设置采用酒馆原生折叠面板，窄屏按插件容器宽度自动重排。
 
+## 发布给用户
+
+运行 `powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1` 会在 `release` 生成三种包：
+
+- `srl-bridge-extension-v0.3.0.zip`：仅酒馆页面扩展，同浏览器互传使用。
+- `srl-bridge-server-plugin-v0.3.0.zip`：仅设备码服务端插件。
+- `srl-bridge-complete-v0.3.0.zip`：完整包，包含两者和中文安装说明，推荐普通用户下载。
+
+SRL 网站的“功能 → 酒馆互传”页已内置这三个下载入口；部署 `dist` 后会一起发布。也可以把相同文件上传到项目的 GitHub Releases。服务端插件不能由 Netlify 代替，必须由用户安装到实际运行 SillyTavern 的电脑或服务器。
+
 ## 通信与安全
 
 - SillyTavern 1.18.0 使用 `Cross-Origin-Opener-Policy: same-origin`，扩展因此先打开同源 `bridge.html`，再在其中嵌入 SRL 并转交 `MessageChannel`。中继只接受配置中的精确 SRL 来源。
