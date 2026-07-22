@@ -1,49 +1,103 @@
-# SRL 酒馆互传扩展
+# SRL 酒馆资源库互传
 
-适配 SillyTavern 1.18.x 的桥接扩展。支持角色卡、世界书、当前 API 类型预设、快速回复组、酒馆主题，以及全局、角色卡、预设三种作用域正则与 SRL 双向传输。
+这是 [SillyTavern](https://github.com/SillyTavern/SillyTavern) 与 SRL 酒馆资源库之间的双向资源桥。它是第三方扩展，不是 SillyTavern 官方组件。
 
-## 安装
+页面扩展适配 SillyTavern 1.18.x；桌面端和移动端使用同一套响应式界面。
 
-把本目录复制到当前酒馆用户的 `extensions/srl-bridge`，重新加载 SillyTavern，然后在“扩展”设置中找到“酒馆资源库互传”。开发机当前安装位置为：
+![桌面端扩展界面](docs/settings-desktop.png)
 
-`D:\SillyTavern\SillyTavern\data\default-user\extensions\srl-bridge`
+## 能做什么
 
-同一浏览器可点击“打开并配对”。跨浏览器或未来 APK 可点击“生成跨浏览器设备码”，再到 SRL 的酒馆互传页填写当前酒馆地址与八位设备码。设备码两分钟内有效，连接最长保留三十分钟，服务重启后立即失效。
+- 双向传输角色卡、世界书和当前 API 类型预设。
+- 双向传输快速回复组和酒馆主题。
+- 区分并传输全局正则、角色卡正则、预设正则，避免写入错误作用域。
+- 同名资源可选择保留副本、跳过或覆盖，覆盖前由用户确认。
+- 文件使用 256 KiB 分块传输并校验 SHA-256，单文件上限 256 MB。
+- 支持同一浏览器直接配对，也支持通过短时设备码连接不同浏览器、手机和未来 APK。
 
-跨浏览器功能还需将 `server-plugin` 安装到 SillyTavern 的 `plugins/srl-bridge`，在 `config.yaml` 启用 `enableServerPlugins: true` 后重启酒馆。中继仅在当前酒馆会话内转发数据块，不把资源写入酒馆服务器磁盘；公网部署时仍必须使用 HTTPS。
+## 最简单的安装方法
 
-手机端同样可以传输，但手机必须能同时访问酒馆和 SRL。不要在手机上填写 `127.0.0.1`：本地开发应在电脑运行 `pnpm dev:lan`，再填写电脑局域网 IP；已部署时直接填写 SRL 的 HTTPS 地址。扩展设置采用酒馆原生折叠面板，窄屏按插件容器宽度自动重排。
+只需要同一浏览器互传时，在 SillyTavern 中打开：
 
-## 发布给用户
+`扩展 → 安装扩展 → 输入 Git 仓库 URL`
 
-运行 `powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1` 会在 `release` 生成三种包：
+粘贴下面的地址：
 
-- `srl-bridge-extension-v0.3.0.zip`：仅酒馆页面扩展，同浏览器互传使用。
-- `srl-bridge-server-plugin-v0.3.0.zip`：仅设备码服务端插件。
-- `srl-bridge-complete-v0.3.0.zip`：完整包，包含两者和中文安装说明，推荐普通用户下载。
+```text
+https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge
+```
 
-SRL 网站的“功能 → 酒馆互传”页已内置这三个下载入口；部署 `dist` 后会一起发布。也可以把相同文件上传到项目的 GitHub Releases。服务端插件不能由 Netlify 代替，必须由用户安装到实际运行 SillyTavern 的电脑或服务器。
+确认第三方扩展安全提示，等待安装完成，然后刷新 SillyTavern。以后可以在酒馆的扩展管理中检查更新。
 
-## 通信与安全
+> 直接 Git 安装只会安装页面扩展。同一浏览器使用不需要服务端插件。
 
-- SillyTavern 1.18.0 使用 `Cross-Origin-Opener-Policy: same-origin`，扩展因此先打开同源 `bridge.html`，再在其中嵌入 SRL 并转交 `MessageChannel`。中继只接受配置中的精确 SRL 来源。
-- 不读取或写入酒馆数据目录，资源通过 SillyTavern 当前页面公开上下文或官方接口处理。
-- 文件按 256 KiB 分块并逐块确认，接收端校验声明大小与 SHA-256；单文件上限为 256 MB。
-- 设备码中继采用短期随机令牌、酒馆用户隔离、加入限速和 2 MiB 内存队列上限，不保存传输文件。
-- 同名资源可选择保留副本、跳过或覆盖；覆盖前由 SRL 再次确认。
+## 手机或不同浏览器：还要安装服务端插件
 
-## 当前边界
+页面扩展运行在浏览器中，而设备码中继必须运行在 SillyTavern 服务端。出于安全原因，页面扩展不能自行向 `SillyTavern/plugins` 写文件，所以服务端插件需要用户明确安装一次。
 
-- 酒馆助手脚本尚未接入；快速回复已接入，角色卡与预设正则会按所属对象传输。
-- 跨设备访问仍要求设备能访问同一个 SillyTavern 地址；公网使用必须配置 HTTPS 和访问控制，不应裸露酒馆端口。
-- 这是用户主动触发的单次互传，不是后台实时同步。
-- SRL 页面必须允许被扩展中继页嵌入；项目自带的 Netlify 配置没有禁止嵌入。
-- 不应把 SillyTavern 服务端口直接暴露到公网。
+1. 打开 [最新版本下载页](https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge/releases/latest)。
+2. 下载 `srl-bridge-server-plugin-v0.3.1.zip`；完全不熟悉目录的用户可以下载 `srl-bridge-complete-v0.3.1.zip`。
+3. 关闭 SillyTavern。
+4. 解压后把服务端的 `srl-bridge` 文件夹放到 `SillyTavern/plugins/srl-bridge`。
+5. 确认最终路径是 `SillyTavern/plugins/srl-bridge/index.mjs`，不要多套一层文件夹。
+6. 打开 `SillyTavern/config.yaml`，把 `enableServerPlugins` 设置为 `true`。
+7. 重新启动 SillyTavern。日志出现 `[SRL Bridge] Short-lived device relay loaded` 即加载成功。
 
-## 验证
+服务端插件下载直达：[srl-bridge-server-plugin-v0.3.1.zip](https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge/releases/download/v0.3.1/srl-bridge-server-plugin-v0.3.1.zip)
+
+## 我应该安装哪个
+
+| 使用方式 | 页面扩展 | 服务端插件 |
+| --- | --- | --- |
+| SRL 与酒馆在同一个浏览器 | 必须 | 不需要 |
+| 同一电脑的两个不同浏览器 | 必须 | 必须 |
+| 手机连接电脑上的酒馆 | 必须 | 必须 |
+| SRL 打包为 APK 后连接酒馆 | 必须 | 必须 |
+
+## 使用方法
+
+### 同一浏览器
+
+1. 在酒馆的扩展设置中展开“SRL 酒馆互传”。
+2. 填写 SRL 地址，点击“打开并配对”。
+3. 核对双方显示的六位确认码。
+4. 在 SRL 中选择资源并决定传入或拉取。
+
+### 手机或不同浏览器
+
+1. 确认页面扩展和服务端插件都已安装。
+2. 在酒馆扩展中点击“生成跨浏览器设备码”。
+3. 在另一浏览器或手机打开 SRL，进入“功能 → 酒馆互传”。
+4. 填写当前酒馆地址和八位设备码，再核对六位确认码。
+
+手机不能填写 `127.0.0.1`，因为它指向手机自己。应填写运行酒馆电脑的局域网地址，例如 `http://192.168.1.10:8000`。公网使用必须配置 HTTPS、SillyTavern 登录和访问控制，不要直接裸露酒馆端口。
+
+## 安全设计
+
+- 每次连接都由用户主动发起，不后台同步。
+- 设备码两分钟失效，连接最长保留三十分钟，服务重启后立即清空。
+- 服务端中继只保存限额内存消息队列，不把角色卡或其他资源写入服务器磁盘。
+- 配对校验协议版本、精确来源、通道 ID、声明大小和 SHA-256。
+- 服务端插件拥有与 SillyTavern 服务端相同的本机权限，只应从本仓库发布页下载。
+
+## 当前限制
+
+- 酒馆助手脚本尚未接入互传。
+- 跨设备连接要求双方都能访问同一个 SillyTavern 地址。
+- 服务端插件目前通过 Release 手动更新；页面扩展可通过酒馆扩展管理更新。
+- Netlify 等静态网站可以托管 SRL 和下载包，但不能代替安装在 SillyTavern 主机上的服务端插件。
+
+## 开发与验证
 
 ```bash
+npm install
 npm run check
 ```
 
-真实联调脚本为 `tests/bridge.e2e.mjs`，凭证仅从运行时环境变量读取，不写入仓库。
+发布包由以下命令生成：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1
+```
+
+真实联调脚本为 `tests/bridge.e2e.mjs`，凭证只从运行时环境变量读取，不写入仓库。

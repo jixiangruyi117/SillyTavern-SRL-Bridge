@@ -6,6 +6,9 @@
   "js": "index.js",
   "css": "style.css",
   "author": "SRL",
-  "version": "0.3.0",
-  "homePage": ""
+  "version": "0.3.1",
+  "description": "在 SillyTavern 与 SRL 酒馆资源库之间安全互传角色卡、世界书、预设、正则、快速回复和主题。",
+  "homePage": "https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge",
+  "auto_update": true,
+  "minimum_client_version": "1.18.0"
 }

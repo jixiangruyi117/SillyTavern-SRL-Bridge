@@ -1,5 +1,9 @@
 # SRL 酒馆互传安装说明
 
+页面扩展也可以直接在 SillyTavern 的“安装扩展”中粘贴以下地址：
+
+`https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge`
+
 ## 先选你需要的模式
 
 - 只在同一个浏览器里使用：只安装“酒馆页面扩展”即可。
@@ -26,6 +30,8 @@
 4. 用文本编辑器打开 `SillyTavern/config.yaml`。
 5. 找到 `enableServerPlugins: false`，改成 `enableServerPlugins: true`。
 6. 重新启动 SillyTavern。启动日志出现 `[SRL Bridge] Short-lived device relay loaded` 即安装成功。
+
+服务端插件不能由浏览器页面扩展自动安装，这是为了避免第三方前端扩展越权写入 SillyTavern 服务端目录。更新时请从 GitHub 最新 Release 重新下载并覆盖这两个文件。
 
 ## 三、跨浏览器连接
 

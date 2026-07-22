@@ -1,4 +1,4 @@
-param([string]$Version = '0.3.0')
+param([string]$Version = '0.3.1')
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $releaseRoot = Join-Path $repoRoot 'release'
