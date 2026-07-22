@@ -19,7 +19,18 @@
           <li>角色卡</li>
           <li>世界书</li>
           <li>预设</li>
+          <li>正则</li>
+          <li>快速回复</li>
+          <li>主题</li>
         </ul>
+      </div>
+
+      <div class="srl-bridge-browser" role="note">
+        <i class="fa-solid fa-window-restore" aria-hidden="true"></i>
+        <span>
+          <strong>将在当前浏览器打开</strong>
+          <small id="srl-bridge-browser-name">正在识别当前浏览器…</small>
+        </span>
       </div>
 
       <label class="srl-bridge-field" for="srl-bridge-url">
@@ -42,7 +53,7 @@
       <div class="srl-bridge-actions">
         <button id="srl-bridge-connect" class="menu_button srl-bridge-connect" type="button">
           <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
-          <span>打开 SRL 并配对</span>
+          <span id="srl-bridge-connect-label">在当前浏览器打开并配对</span>
         </button>
         <button id="srl-bridge-disconnect" class="menu_button" type="button">
           <i class="fa-solid fa-link-slash" aria-hidden="true"></i>
@@ -64,6 +75,7 @@
         <summary><span>连接与手机使用说明</span><i class="fa-solid fa-plus" aria-hidden="true"></i></summary>
         <div>
           <p><strong>手机可以传。</strong>请先用手机浏览器打开能够访问的 SillyTavern，再从本面板打开同样可访问的 SRL 地址。</p>
+          <p><strong>为什么不能自动选择“最常用浏览器”？</strong>网页无权读取其他浏览器的使用频率和本地数据库。当前直连会固定使用正在打开酒馆的浏览器；如果 SRL 数据保存在另一浏览器，请先在那个浏览器导出完整备份，或等待启用跨浏览器服务端中继。</p>
           <p>扩展只接受这里填写的 SRL 来源；文件分块传输并校验 SHA-256，不会上传酒馆账号，也不会直接开放酒馆数据目录。</p>
         </div>
       </details>

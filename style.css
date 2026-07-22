@@ -124,6 +124,33 @@
   list-style: none;
 }
 
+.srl-bridge-browser {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 70%, transparent);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 88%, transparent);
+}
+
+.srl-bridge-browser > i {
+  color: var(--SmartThemeQuoteColor);
+}
+
+.srl-bridge-browser span {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.srl-bridge-browser small {
+  color: var(--SmartThemeBodyColor);
+  opacity: 0.72;
+  overflow-wrap: anywhere;
+}
+
 .srl-bridge-intro li {
   padding: 0.22rem 0.48rem;
   border: 1px solid var(--srl-line);

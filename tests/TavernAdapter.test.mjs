@@ -8,6 +8,8 @@ function installContext(overrides = {}) {
     characters: [{ name: '测试角色', avatar: 'test.png', data: { creator: 'SRL' } }],
     getWorldInfoNames: () => ['测试世界书'],
     getRequestHeaders: () => ({ 'X-CSRF-Token': 'test' }),
+    extensionSettings: { regex: [] },
+    saveSettingsDebounced: () => {},
     updateWorldInfoList: async () => {},
     getPresetManager: async () => ({
       getAllPresets: async () => ['默认预设'],
@@ -76,4 +78,26 @@ test('creates a conflict-safe preset copy without replacing the original', async
   const result = await new TavernAdapter().importResource(file, 'preset', 'copy')
   assert.deepEqual(saved, { name: '默认预设 (SRL 2)', data: { temperature: 0.8 } })
   assert.deepEqual(result, { status: 'created', name: '默认预设 (SRL 2)' })
+})
+
+test('imports a global regex copy through extension settings', async () => {
+  let saved = false
+  const context = installContext({
+    extensionSettings: {
+      regex: [{ id: 'old', scriptName: '清理思维链', findRegex: '/old/g', replaceString: '' }],
+    },
+    saveSettingsDebounced: () => {
+      saved = true
+    },
+  })
+  const file = new File(
+    [JSON.stringify({ id: 'new', scriptName: '清理思维链', findRegex: '/new/g', replaceString: '' })],
+    '清理思维链.json',
+    { type: 'application/json' },
+  )
+  const result = await new TavernAdapter().importResource(file, 'regex', 'copy')
+  assert.equal(context.extensionSettings.regex.length, 2)
+  assert.equal(context.extensionSettings.regex[1].scriptName, '清理思维链 (SRL 2)')
+  assert.equal(saved, true)
+  assert.deepEqual(result, { status: 'created', name: '清理思维链' })
 })

@@ -67,7 +67,7 @@ export class BridgeController extends EventTarget {
       envelope('st-port', {
         channel: this.channel,
         pairCode: this.pairCode,
-        capabilities: ['character', 'worldBook', 'preset'],
+        capabilities: ['character', 'worldBook', 'preset', 'regex', 'quickReply', 'theme'],
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
       }),
       window.location.origin,
@@ -81,7 +81,9 @@ export class BridgeController extends EventTarget {
     try {
       if (message.type === 'srl-accept') {
         if (message.pairCode !== this.pairCode) throw new Error('配对码不一致')
-        this.send('st-ready', { capabilities: ['character', 'worldBook', 'preset'] })
+        this.send('st-ready', {
+          capabilities: ['character', 'worldBook', 'preset', 'regex', 'quickReply', 'theme'],
+        })
         this.emitState('connected', '已连接 SRL')
       } else if (message.type === 'list-request') {
         this.send('list-response', { requestId: message.requestId, items: await this.adapter.listResources() })

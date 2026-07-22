@@ -11,6 +11,10 @@ function jsonFile(data, name) {
   })
 }
 
+function displayNameFromFile(file, fallback) {
+  return safeFileName(file.name.replace(/\.[^.]+$/u, ''), fallback)
+}
+
 export class TavernAdapter {
   get context() {
     const context = window.SillyTavern?.getContext?.()
@@ -43,7 +47,53 @@ export class TavernAdapter {
       fileName: `${name}.json`,
       detail: '当前 API 类型的预设',
     }))
-    return [...characters, ...worldBooks, ...presets]
+    const regexes = (Array.isArray(context.extensionSettings?.regex)
+      ? context.extensionSettings.regex
+      : []
+    ).map((script, index) => ({
+        id: `regex:${script.id || index}`,
+        kind: RESOURCE_KINDS.REGEX,
+        name: script.scriptName || `正则 ${index + 1}`,
+        fileName: `${safeFileName(script.scriptName || `regex-${index + 1}`)}.json`,
+        detail: '全局正则',
+      }))
+    const quickReplyApi = globalThis.quickReplyApi
+    const quickReplies = quickReplyApi
+      ? quickReplyApi.listSets().map((name) => ({
+          id: `quickReply:${name}`,
+          kind: RESOURCE_KINDS.QUICK_REPLY,
+          name,
+          fileName: `${safeFileName(name)}.json`,
+          detail: '快速回复组',
+        }))
+      : []
+    let themes = []
+    try {
+      themes =
+        (await this.getSettingsData()).themes?.map((theme) => ({
+          id: `theme:${theme.name}`,
+          kind: RESOURCE_KINDS.THEME,
+          name: theme.name,
+          fileName: `${safeFileName(theme.name)}.json`,
+          detail: '酒馆主题',
+        })) ?? []
+    } catch {
+      // Older SillyTavern builds may not expose themes in settings/get.
+    }
+    return [...characters, ...worldBooks, ...presets, ...regexes, ...quickReplies, ...themes]
+  }
+
+  async getSettingsData() {
+    const response = assertResponse(
+      await fetch('/api/settings/get', {
+        method: 'POST',
+        headers: this.context.getRequestHeaders(),
+        body: JSON.stringify({}),
+        cache: 'no-cache',
+      }),
+      '读取酒馆设置',
+    )
+    return response.json()
   }
 
   async exportResource(item) {
@@ -80,6 +130,27 @@ export class TavernAdapter {
       if (!preset) throw new Error(`找不到预设“${name}”`)
       return jsonFile(preset, name)
     }
+    if (item.kind === RESOURCE_KINDS.REGEX) {
+      const key = item.id.slice('regex:'.length)
+      const scripts = Array.isArray(context.extensionSettings?.regex)
+        ? context.extensionSettings.regex
+        : []
+      const script = scripts.find((entry, index) => String(entry.id || index) === key)
+      if (!script) throw new Error(`找不到正则“${item.name}”`)
+      return jsonFile(script, script.scriptName || item.name)
+    }
+    if (item.kind === RESOURCE_KINDS.QUICK_REPLY) {
+      const name = item.id.slice('quickReply:'.length)
+      const set = globalThis.quickReplyApi?.getSetByName(name)
+      if (!set) throw new Error(`找不到快速回复组“${name}”`)
+      return jsonFile(set.toJSON(), name)
+    }
+    if (item.kind === RESOURCE_KINDS.THEME) {
+      const name = item.id.slice('theme:'.length)
+      const theme = (await this.getSettingsData()).themes?.find((entry) => entry.name === name)
+      if (!theme) throw new Error(`找不到主题“${name}”`)
+      return jsonFile(theme, name)
+    }
     throw new Error('暂不支持这种资源类型')
   }
 
@@ -88,6 +159,9 @@ export class TavernAdapter {
     if (kind === RESOURCE_KINDS.CHARACTER) return this.importCharacter(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.WORLD_BOOK) return this.importWorldBook(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.PRESET) return this.importPreset(file, conflictPolicy)
+    if (kind === RESOURCE_KINDS.REGEX) return this.importRegex(file, conflictPolicy)
+    if (kind === RESOURCE_KINDS.QUICK_REPLY) return this.importQuickReply(file, conflictPolicy)
+    if (kind === RESOURCE_KINDS.THEME) return this.importTheme(file, conflictPolicy)
     throw new Error('酒馆端暂不支持这种资源类型')
   }
 
@@ -161,6 +235,91 @@ export class TavernAdapter {
     if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
     const targetName = existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
     await manager.savePreset(targetName, preset)
+    return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: targetName }
+  }
+
+  async importRegex(file, conflictPolicy) {
+    const parsed = JSON.parse(await file.text())
+    const incoming = Array.isArray(parsed) ? parsed : [parsed]
+    if (!incoming.length || incoming.some((script) => !script || typeof script !== 'object')) {
+      throw new Error('正则文件内容无效')
+    }
+    const scripts = Array.isArray(this.context.extensionSettings?.regex)
+      ? [...this.context.extensionSettings.regex]
+      : []
+    let skipped = 0
+    for (const source of incoming) {
+      const script = structuredClone(source)
+      const baseName = safeFileName(script.scriptName || displayNameFromFile(file, 'SRL 正则'))
+      const existingIndex = scripts.findIndex(
+        (entry) =>
+          (script.id && entry.id === script.id) ||
+          entry.scriptName?.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
+      )
+      if (existingIndex >= 0 && conflictPolicy === 'skip') {
+        skipped += 1
+        continue
+      }
+      if (existingIndex >= 0 && conflictPolicy === 'copy') {
+        script.id = crypto.randomUUID()
+        script.scriptName = uniqueName(baseName, scripts.map((entry) => entry.scriptName || ''))
+        scripts.push(script)
+      } else if (existingIndex >= 0) {
+        script.scriptName = baseName
+        scripts.splice(existingIndex, 1, script)
+      } else {
+        script.id ||= crypto.randomUUID()
+        script.scriptName = baseName
+        scripts.push(script)
+      }
+    }
+    this.context.extensionSettings.regex = scripts
+    this.context.saveSettingsDebounced()
+    return {
+      status: skipped === incoming.length ? 'skipped' : 'created',
+      name: incoming.length === 1 ? incoming[0].scriptName || file.name : `${incoming.length} 条正则`,
+    }
+  }
+
+  async importQuickReply(file, conflictPolicy) {
+    const api = globalThis.quickReplyApi
+    if (!api) throw new Error('快速回复模块尚未加载，请稍后重试')
+    const parsed = JSON.parse(await file.text())
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.qrList)) {
+      throw new Error('快速回复文件缺少 qrList')
+    }
+    const baseName = safeFileName(parsed.name || displayNameFromFile(file, 'SRL 快速回复'))
+    const names = api.listSets()
+    const existing = names.find((name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase())
+    if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
+    const targetName = existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
+    const set = await api.createSet(targetName, {
+      disableSend: parsed.disableSend,
+      placeBeforeInput: parsed.placeBeforeInput,
+      injectInput: parsed.injectInput,
+    })
+    set.color = typeof parsed.color === 'string' ? parsed.color : 'transparent'
+    set.onlyBorderColor = Boolean(parsed.onlyBorderColor)
+    set.qrList.splice(0)
+    for (const quickReply of parsed.qrList) set.addQuickReply(structuredClone(quickReply))
+    await set.save()
+    return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: targetName }
+  }
+
+  async importTheme(file, conflictPolicy) {
+    const parsed = JSON.parse(await file.text())
+    if (!parsed || typeof parsed !== 'object') throw new Error('主题文件内容无效')
+    const themes = (await this.getSettingsData()).themes ?? []
+    const baseName = safeFileName(parsed.name || displayNameFromFile(file, 'SRL 主题'))
+    const existing = themes.find((theme) => theme.name?.toLocaleLowerCase() === baseName.toLocaleLowerCase())
+    if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing.name }
+    const targetName = existing && conflictPolicy === 'copy' ? uniqueName(baseName, themes.map((theme) => theme.name)) : baseName
+    const response = await fetch('/api/themes/save', {
+      method: 'POST',
+      headers: this.context.getRequestHeaders(),
+      body: JSON.stringify({ ...parsed, name: targetName }),
+    })
+    assertResponse(response, '导入主题')
     return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: targetName }
   }
 }

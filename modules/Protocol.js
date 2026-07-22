@@ -7,6 +7,9 @@ export const RESOURCE_KINDS = Object.freeze({
   CHARACTER: 'character',
   WORLD_BOOK: 'worldBook',
   PRESET: 'preset',
+  REGEX: 'regex',
+  QUICK_REPLY: 'quickReply',
+  THEME: 'theme',
 })
 
 export function createId(prefix = 'message') {

@@ -17,6 +17,21 @@ function context() {
   return window.SillyTavern?.getContext?.()
 }
 
+function currentBrowserName() {
+  const brands = navigator.userAgentData?.brands ?? []
+  const names = brands.map((brand) => brand.brand)
+  if (names.some((name) => /Edge/i.test(name))) return 'Microsoft Edge'
+  if (names.some((name) => /Opera/i.test(name))) return 'Opera'
+  if (names.some((name) => /Chrome|Chromium/i.test(name))) return 'Google Chrome / Chromium'
+  const agent = navigator.userAgent
+  if (/Firefox\//i.test(agent)) return 'Mozilla Firefox'
+  if (/Edg\//i.test(agent)) return 'Microsoft Edge'
+  if (/OPR\//i.test(agent)) return 'Opera'
+  if (/Chrome\//i.test(agent)) return 'Google Chrome'
+  if (/Safari\//i.test(agent)) return 'Safari'
+  return '当前酒馆浏览器'
+}
+
 function saveUrl(value) {
   const settings = context().extensionSettings
   settings[SETTINGS_KEY] = { ...(settings[SETTINGS_KEY] ?? {}), srlUrl: value }
@@ -99,3 +114,8 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else void initialize()
 
 window.addEventListener('pagehide', () => controller?.destroy(), { once: true })
+  const browserName = currentBrowserName()
+  document.getElementById('srl-bridge-browser-name').textContent =
+    `${browserName} · 酒馆与 SRL 必须位于同一浏览器配置中`
+  document.getElementById('srl-bridge-connect-label').textContent =
+    `在 ${browserName} 打开并配对`
