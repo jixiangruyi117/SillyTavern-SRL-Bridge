@@ -47,16 +47,45 @@ export class TavernAdapter {
       fileName: `${name}.json`,
       detail: '当前 API 类型的预设',
     }))
-    const regexes = (Array.isArray(context.extensionSettings?.regex)
-      ? context.extensionSettings.regex
-      : []
+    const globalRegexes = (
+      Array.isArray(context.extensionSettings?.regex) ? context.extensionSettings.regex : []
     ).map((script, index) => ({
-        id: `regex:${script.id || index}`,
-        kind: RESOURCE_KINDS.REGEX,
-        name: script.scriptName || `正则 ${index + 1}`,
-        fileName: `${safeFileName(script.scriptName || `regex-${index + 1}`)}.json`,
-        detail: '全局正则',
-      }))
+      id: `regexGlobal:${script.id || index}`,
+      kind: RESOURCE_KINDS.REGEX_GLOBAL,
+      name: script.scriptName || `正则 ${index + 1}`,
+      fileName: `${safeFileName(script.scriptName || `regex-${index + 1}`)}.json`,
+      detail: '全局正则',
+    }))
+    const characterRegexes = context.characters.flatMap((character) => {
+      const scripts = character.data?.extensions?.regex_scripts
+      if (!Array.isArray(scripts) || !scripts.length) return []
+      const name = character.name || character.avatar.replace(/\.png$/i, '')
+      return [
+        {
+          id: `regexCharacter:${character.avatar}`,
+          kind: RESOURCE_KINDS.REGEX_CHARACTER,
+          name: `${name} · 角色卡正则`,
+          fileName: `${safeFileName(name)} · 角色卡正则.json`,
+          detail: `${scripts.length} 条 · 绑定角色卡`,
+        },
+      ]
+    })
+    const presetRegexes = (
+      await Promise.all(
+        presets.map(async (preset) => {
+          const data = await presetManager?.getCompletionPresetByName?.(preset.name)
+          const scripts = data?.extensions?.regex_scripts
+          if (!Array.isArray(scripts) || !scripts.length) return undefined
+          return {
+            id: `regexPreset:${preset.name}`,
+            kind: RESOURCE_KINDS.REGEX_PRESET,
+            name: `${preset.name} · 预设正则`,
+            fileName: `${safeFileName(preset.name)} · 预设正则.json`,
+            detail: `${scripts.length} 条 · 绑定预设`,
+          }
+        }),
+      )
+    ).filter(Boolean)
     const quickReplyApi = globalThis.quickReplyApi
     const quickReplies = quickReplyApi
       ? quickReplyApi.listSets().map((name) => ({
@@ -80,7 +109,16 @@ export class TavernAdapter {
     } catch {
       // Older SillyTavern builds may not expose themes in settings/get.
     }
-    return [...characters, ...worldBooks, ...presets, ...regexes, ...quickReplies, ...themes]
+    return [
+      ...characters,
+      ...worldBooks,
+      ...presets,
+      ...globalRegexes,
+      ...characterRegexes,
+      ...presetRegexes,
+      ...quickReplies,
+      ...themes,
+    ]
   }
 
   async getSettingsData() {
@@ -130,14 +168,36 @@ export class TavernAdapter {
       if (!preset) throw new Error(`找不到预设“${name}”`)
       return jsonFile(preset, name)
     }
-    if (item.kind === RESOURCE_KINDS.REGEX) {
-      const key = item.id.slice('regex:'.length)
+    if (item.kind === RESOURCE_KINDS.REGEX_GLOBAL) {
+      const key = item.id.slice('regexGlobal:'.length)
       const scripts = Array.isArray(context.extensionSettings?.regex)
         ? context.extensionSettings.regex
         : []
       const script = scripts.find((entry, index) => String(entry.id || index) === key)
       if (!script) throw new Error(`找不到正则“${item.name}”`)
-      return jsonFile(script, script.scriptName || item.name)
+      return jsonFile({ global: [script], sourceName: '全局正则' }, script.scriptName || item.name)
+    }
+    if (item.kind === RESOURCE_KINDS.REGEX_CHARACTER) {
+      const avatar = item.id.slice('regexCharacter:'.length)
+      const character = context.characters.find((entry) => entry.avatar === avatar)
+      const scripts = character?.data?.extensions?.regex_scripts
+      if (!character || !Array.isArray(scripts)) throw new Error(`找不到角色卡正则“${item.name}”`)
+      return jsonFile(
+        {
+          scoped: scripts,
+          sourceName: character.name || avatar,
+          sourceAvatar: avatar,
+        },
+        item.fileName.replace(/\.json$/i, ''),
+      )
+    }
+    if (item.kind === RESOURCE_KINDS.REGEX_PRESET) {
+      const name = item.id.slice('regexPreset:'.length)
+      const manager = await context.getPresetManager()
+      const preset = await manager?.getCompletionPresetByName?.(name)
+      const scripts = preset?.extensions?.regex_scripts
+      if (!preset || !Array.isArray(scripts)) throw new Error(`找不到预设正则“${item.name}”`)
+      return jsonFile({ preset: scripts, sourceName: name }, item.fileName.replace(/\.json$/i, ''))
     }
     if (item.kind === RESOURCE_KINDS.QUICK_REPLY) {
       const name = item.id.slice('quickReply:'.length)
@@ -154,12 +214,18 @@ export class TavernAdapter {
     throw new Error('暂不支持这种资源类型')
   }
 
-  async importResource(file, kind, conflictPolicy = 'copy') {
+  async importResource(file, kind, conflictPolicy = 'copy', metadata = {}) {
     if (file.size > MAX_FILE_SIZE) throw new Error('单个文件超过 256 MB，已停止导入')
     if (kind === RESOURCE_KINDS.CHARACTER) return this.importCharacter(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.WORLD_BOOK) return this.importWorldBook(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.PRESET) return this.importPreset(file, conflictPolicy)
-    if (kind === RESOURCE_KINDS.REGEX) return this.importRegex(file, conflictPolicy)
+    if (kind === RESOURCE_KINDS.REGEX_GLOBAL) return this.importRegex(file, conflictPolicy)
+    if (kind === RESOURCE_KINDS.REGEX_CHARACTER) {
+      return this.importScopedRegex(file, conflictPolicy, metadata.targetName)
+    }
+    if (kind === RESOURCE_KINDS.REGEX_PRESET) {
+      return this.importPresetRegex(file, conflictPolicy, metadata.targetName)
+    }
     if (kind === RESOURCE_KINDS.QUICK_REPLY) return this.importQuickReply(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.THEME) return this.importTheme(file, conflictPolicy)
     throw new Error('酒馆端暂不支持这种资源类型')
@@ -171,7 +237,8 @@ export class TavernAdapter {
     const existing = context.characters.find(
       (character) =>
         character.name?.toLocaleLowerCase() === baseName.toLocaleLowerCase() ||
-        character.avatar?.replace(/\.png$/i, '').toLocaleLowerCase() === baseName.toLocaleLowerCase(),
+        character.avatar?.replace(/\.png$/i, '').toLocaleLowerCase() ===
+          baseName.toLocaleLowerCase(),
     )
     if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: baseName }
     const format = file.name.split('.').pop()?.toLocaleLowerCase()
@@ -193,7 +260,10 @@ export class TavernAdapter {
     const result = await response.json()
     if (result.error) throw new Error('酒馆拒绝了角色卡文件')
     await context.getCharacters?.()
-    return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: result.file_name }
+    return {
+      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      name: result.file_name,
+    }
   }
 
   async importWorldBook(file, conflictPolicy) {
@@ -206,8 +276,11 @@ export class TavernAdapter {
     const names = context.getWorldInfoNames()
     const existing = names.find((name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase())
     if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
-    const targetName = existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
-    const targetFile = new File([JSON.stringify(parsed)], `${targetName}.json`, { type: 'application/json' })
+    const targetName =
+      existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
+    const targetFile = new File([JSON.stringify(parsed)], `${targetName}.json`, {
+      type: 'application/json',
+    })
     const form = new FormData()
     form.append('avatar', targetFile)
     const response = assertResponse(
@@ -221,7 +294,10 @@ export class TavernAdapter {
     )
     const result = await response.json()
     await context.updateWorldInfoList?.()
-    return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: result.name }
+    return {
+      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      name: result.name,
+    }
   }
 
   async importPreset(file, conflictPolicy) {
@@ -233,14 +309,22 @@ export class TavernAdapter {
     const baseName = safeFileName(file.name.replace(/\.[^.]+$/u, ''), 'SRL 预设')
     const existing = names.find((name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase())
     if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
-    const targetName = existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
+    const targetName =
+      existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
     await manager.savePreset(targetName, preset)
-    return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: targetName }
+    return {
+      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      name: targetName,
+    }
   }
 
   async importRegex(file, conflictPolicy) {
     const parsed = JSON.parse(await file.text())
-    const incoming = Array.isArray(parsed) ? parsed : [parsed]
+    const incoming = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed.global)
+        ? parsed.global
+        : [parsed]
     if (!incoming.length || incoming.some((script) => !script || typeof script !== 'object')) {
       throw new Error('正则文件内容无效')
     }
@@ -262,7 +346,10 @@ export class TavernAdapter {
       }
       if (existingIndex >= 0 && conflictPolicy === 'copy') {
         script.id = crypto.randomUUID()
-        script.scriptName = uniqueName(baseName, scripts.map((entry) => entry.scriptName || ''))
+        script.scriptName = uniqueName(
+          baseName,
+          scripts.map((entry) => entry.scriptName || ''),
+        )
         scripts.push(script)
       } else if (existingIndex >= 0) {
         script.scriptName = baseName
@@ -277,8 +364,77 @@ export class TavernAdapter {
     this.context.saveSettingsDebounced()
     return {
       status: skipped === incoming.length ? 'skipped' : 'created',
-      name: incoming.length === 1 ? incoming[0].scriptName || file.name : `${incoming.length} 条正则`,
+      name:
+        incoming.length === 1 ? incoming[0].scriptName || file.name : `${incoming.length} 条正则`,
     }
+  }
+
+  async importScopedRegex(file, conflictPolicy, requestedName) {
+    const parsed = JSON.parse(await file.text())
+    const incoming = Array.isArray(parsed) ? parsed : parsed.scoped
+    if (!Array.isArray(incoming) || !incoming.length) throw new Error('角色卡正则文件为空')
+    const targetName = requestedName || parsed.sourceName
+    const index = this.context.characters.findIndex(
+      (character) =>
+        character.name?.toLocaleLowerCase() === String(targetName).toLocaleLowerCase() ||
+        character.avatar === parsed.sourceAvatar,
+    )
+    if (index < 0) throw new Error(`酒馆中找不到目标角色卡“${targetName || '未指定'}”`)
+    const character = this.context.characters[index]
+    const existing = Array.isArray(character.data?.extensions?.regex_scripts)
+      ? character.data.extensions.regex_scripts
+      : []
+    if (existing.length && conflictPolicy === 'skip')
+      return { status: 'skipped', name: character.name }
+    const scripts = conflictPolicy === 'copy' ? this.mergeRegexCopies(existing, incoming) : incoming
+    await this.context.writeExtensionField(index, 'regex_scripts', scripts)
+    return {
+      status: existing.length && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      name: character.name,
+    }
+  }
+
+  async importPresetRegex(file, conflictPolicy, requestedName) {
+    const parsed = JSON.parse(await file.text())
+    const incoming = Array.isArray(parsed) ? parsed : parsed.preset
+    if (!Array.isArray(incoming) || !incoming.length) throw new Error('预设正则文件为空')
+    const targetName = requestedName || parsed.sourceName
+    const manager = await this.context.getPresetManager()
+    const names = (await manager?.getAllPresets?.()) ?? []
+    const actualName = names.find(
+      (name) => name.toLocaleLowerCase() === String(targetName).toLocaleLowerCase(),
+    )
+    if (!actualName) throw new Error(`酒馆中找不到目标预设“${targetName || '未指定'}”`)
+    const preset = await manager.getCompletionPresetByName(actualName)
+    const existing = Array.isArray(preset?.extensions?.regex_scripts)
+      ? preset.extensions.regex_scripts
+      : []
+    if (existing.length && conflictPolicy === 'skip') return { status: 'skipped', name: actualName }
+    const scripts = conflictPolicy === 'copy' ? this.mergeRegexCopies(existing, incoming) : incoming
+    await manager.writePresetExtensionField({
+      name: actualName,
+      path: 'regex_scripts',
+      value: scripts,
+    })
+    return {
+      status: existing.length && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      name: actualName,
+    }
+  }
+
+  mergeRegexCopies(existing, incoming) {
+    const result = [...existing]
+    for (const source of incoming) {
+      const script = structuredClone(source)
+      const baseName = safeFileName(script.scriptName || script.script_name || 'SRL 正则')
+      script.id = crypto.randomUUID()
+      script.scriptName = uniqueName(
+        baseName,
+        result.map((entry) => entry.scriptName || entry.script_name || ''),
+      )
+      result.push(script)
+    }
+    return result
   }
 
   async importQuickReply(file, conflictPolicy) {
@@ -292,7 +448,8 @@ export class TavernAdapter {
     const names = api.listSets()
     const existing = names.find((name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase())
     if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
-    const targetName = existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
+    const targetName =
+      existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
     const set = await api.createSet(targetName, {
       disableSend: parsed.disableSend,
       placeBeforeInput: parsed.placeBeforeInput,
@@ -303,7 +460,10 @@ export class TavernAdapter {
     set.qrList.splice(0)
     for (const quickReply of parsed.qrList) set.addQuickReply(structuredClone(quickReply))
     await set.save()
-    return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: targetName }
+    return {
+      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      name: targetName,
+    }
   }
 
   async importTheme(file, conflictPolicy) {
@@ -311,15 +471,26 @@ export class TavernAdapter {
     if (!parsed || typeof parsed !== 'object') throw new Error('主题文件内容无效')
     const themes = (await this.getSettingsData()).themes ?? []
     const baseName = safeFileName(parsed.name || displayNameFromFile(file, 'SRL 主题'))
-    const existing = themes.find((theme) => theme.name?.toLocaleLowerCase() === baseName.toLocaleLowerCase())
+    const existing = themes.find(
+      (theme) => theme.name?.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
+    )
     if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing.name }
-    const targetName = existing && conflictPolicy === 'copy' ? uniqueName(baseName, themes.map((theme) => theme.name)) : baseName
+    const targetName =
+      existing && conflictPolicy === 'copy'
+        ? uniqueName(
+            baseName,
+            themes.map((theme) => theme.name),
+          )
+        : baseName
     const response = await fetch('/api/themes/save', {
       method: 'POST',
       headers: this.context.getRequestHeaders(),
       body: JSON.stringify({ ...parsed, name: targetName }),
     })
     assertResponse(response, '导入主题')
-    return { status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created', name: targetName }
+    return {
+      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      name: targetName,
+    }
   }
 }

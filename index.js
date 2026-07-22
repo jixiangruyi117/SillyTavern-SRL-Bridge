@@ -42,7 +42,9 @@ function setStatus(detail) {
   const status = document.getElementById('srl-bridge-status')
   const headerStatus = document.getElementById('srl-bridge-header-status')
   const code = document.getElementById('srl-bridge-code')
-  if (!status || !headerStatus || !code) return
+  const devicePanel = document.getElementById('srl-bridge-device-panel')
+  const deviceCode = document.getElementById('srl-bridge-device-code')
+  if (!status || !headerStatus || !code || !devicePanel || !deviceCode) return
   status.dataset.status = detail.status
   headerStatus.dataset.status = detail.status
   const label =
@@ -58,6 +60,8 @@ function setStatus(detail) {
   headerStatus.querySelector('span').textContent = label === '尚未连接' ? '未连接' : label
   code.hidden = !detail.pairCode || detail.status === 'idle'
   code.textContent = detail.pairCode ? `配对码 ${detail.pairCode}` : ''
+  devicePanel.hidden = !detail.deviceCode || detail.status === 'idle'
+  deviceCode.textContent = detail.deviceCode || ''
 }
 
 function appendLog(detail) {
@@ -84,7 +88,8 @@ async function initialize() {
   const input = document.getElementById('srl-bridge-url')
   const storedUrl = context().extensionSettings[SETTINGS_KEY]?.srlUrl
   input.value =
-    storedUrl && !(isLoopbackUrl(storedUrl) && !['127.0.0.1', 'localhost'].includes(location.hostname))
+    storedUrl &&
+    !(isLoopbackUrl(storedUrl) && !['127.0.0.1', 'localhost'].includes(location.hostname))
       ? storedUrl
       : defaultSrlUrl()
   const addressHint = document.getElementById('srl-bridge-address-hint')
@@ -104,18 +109,37 @@ async function initialize() {
       saveUrl(value)
       controller.open(value)
     } catch (error) {
-      setStatus({ status: 'idle', detail: error instanceof Error ? error.message : '无法打开 SRL' })
+      setStatus({
+        status: 'idle',
+        detail: error instanceof Error ? error.message : '无法打开 SRL',
+      })
     }
   })
-  document.getElementById('srl-bridge-disconnect').addEventListener('click', () => controller.disconnect())
+  document.getElementById('srl-bridge-device').addEventListener('click', async () => {
+    try {
+      const value = input.value.trim()
+      saveUrl(value)
+      await controller.openDevice(value)
+    } catch (error) {
+      setStatus({
+        status: 'idle',
+        detail: error instanceof Error ? error.message : '无法创建设备码',
+      })
+    }
+  })
+  document
+    .getElementById('srl-bridge-disconnect')
+    .addEventListener('click', () => controller.disconnect())
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true })
+if (document.readyState === 'loading')
+  document.addEventListener('DOMContentLoaded', initialize, { once: true })
 else void initialize()
 
-window.addEventListener('pagehide', () => controller?.destroy(), { once: true })
-  const browserName = currentBrowserName()
-  document.getElementById('srl-bridge-browser-name').textContent =
-    `${browserName} · 酒馆与 SRL 必须位于同一浏览器配置中`
-  document.getElementById('srl-bridge-connect-label').textContent =
-    `在 ${browserName} 打开并配对`
+window.addEventListener('pagehide', () => controller?.destroy(), {
+  once: true,
+})
+const browserName = currentBrowserName()
+document.getElementById('srl-bridge-browser-name').textContent =
+  `${browserName} · 酒馆与 SRL 必须位于同一浏览器配置中`
+document.getElementById('srl-bridge-connect-label').textContent = `在 ${browserName} 打开并配对`

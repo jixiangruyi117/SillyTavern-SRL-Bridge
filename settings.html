@@ -55,10 +55,21 @@
           <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
           <span id="srl-bridge-connect-label">在当前浏览器打开并配对</span>
         </button>
+        <button id="srl-bridge-device" class="menu_button" type="button">
+          <i class="fa-solid fa-key" aria-hidden="true"></i>
+          <span>生成跨浏览器设备码</span>
+        </button>
         <button id="srl-bridge-disconnect" class="menu_button" type="button">
           <i class="fa-solid fa-link-slash" aria-hidden="true"></i>
           <span>断开</span>
         </button>
+      </div>
+
+      <div id="srl-bridge-device-panel" class="srl-bridge-device-panel" hidden>
+        <span><small>DEVICE CODE</small><strong id="srl-bridge-device-code"></strong></span>
+        <p>
+          在另一浏览器打开 SRL → 功能 → 酒馆互传，填写当前酒馆地址和此设备码。设备码两分钟内有效。
+        </p>
       </div>
 
       <div id="srl-bridge-status" class="srl-bridge-status" data-status="idle" role="status">
@@ -72,11 +83,23 @@
       </div>
 
       <details class="srl-bridge-help">
-        <summary><span>连接与手机使用说明</span><i class="fa-solid fa-plus" aria-hidden="true"></i></summary>
+        <summary>
+          <span>连接与手机使用说明</span><i class="fa-solid fa-plus" aria-hidden="true"></i>
+        </summary>
         <div>
-          <p><strong>手机可以传。</strong>请先用手机浏览器打开能够访问的 SillyTavern，再从本面板打开同样可访问的 SRL 地址。</p>
-          <p><strong>为什么不能自动选择“最常用浏览器”？</strong>网页无权读取其他浏览器的使用频率和本地数据库。当前直连会固定使用正在打开酒馆的浏览器；如果 SRL 数据保存在另一浏览器，请先在那个浏览器导出完整备份，或等待启用跨浏览器服务端中继。</p>
-          <p>扩展只接受这里填写的 SRL 来源；文件分块传输并校验 SHA-256，不会上传酒馆账号，也不会直接开放酒馆数据目录。</p>
+          <p>
+            <strong>手机可以传。</strong>请先用手机浏览器打开能够访问的
+            SillyTavern，再从本面板打开同样可访问的 SRL 地址。
+          </p>
+          <p>
+            <strong>为什么不能自动选择“最常用浏览器”？</strong
+            >网页无权读取其他浏览器的使用频率和本地数据库。当前直连会固定使用正在打开酒馆的浏览器；如果
+            SRL 数据保存在另一浏览器，请先在那个浏览器导出完整备份，或等待启用跨浏览器服务端中继。
+          </p>
+          <p>
+            扩展只接受这里填写的 SRL 来源；文件分块传输并校验
+            SHA-256，不会上传酒馆账号，也不会直接开放酒馆数据目录。
+          </p>
         </div>
       </details>
 

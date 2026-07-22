@@ -76,7 +76,10 @@ test('creates a conflict-safe preset copy without replacing the original', async
     type: 'application/json',
   })
   const result = await new TavernAdapter().importResource(file, 'preset', 'copy')
-  assert.deepEqual(saved, { name: '默认预设 (SRL 2)', data: { temperature: 0.8 } })
+  assert.deepEqual(saved, {
+    name: '默认预设 (SRL 2)',
+    data: { temperature: 0.8 },
+  })
   assert.deepEqual(result, { status: 'created', name: '默认预设 (SRL 2)' })
 })
 
@@ -84,20 +87,114 @@ test('imports a global regex copy through extension settings', async () => {
   let saved = false
   const context = installContext({
     extensionSettings: {
-      regex: [{ id: 'old', scriptName: '清理思维链', findRegex: '/old/g', replaceString: '' }],
+      regex: [
+        {
+          id: 'old',
+          scriptName: '清理思维链',
+          findRegex: '/old/g',
+          replaceString: '',
+        },
+      ],
     },
     saveSettingsDebounced: () => {
       saved = true
     },
   })
   const file = new File(
-    [JSON.stringify({ id: 'new', scriptName: '清理思维链', findRegex: '/new/g', replaceString: '' })],
+    [
+      JSON.stringify({
+        id: 'new',
+        scriptName: '清理思维链',
+        findRegex: '/new/g',
+        replaceString: '',
+      }),
+    ],
     '清理思维链.json',
     { type: 'application/json' },
   )
-  const result = await new TavernAdapter().importResource(file, 'regex', 'copy')
+  const result = await new TavernAdapter().importResource(file, 'regexGlobal', 'copy')
   assert.equal(context.extensionSettings.regex.length, 2)
   assert.equal(context.extensionSettings.regex[1].scriptName, '清理思维链 (SRL 2)')
   assert.equal(saved, true)
   assert.deepEqual(result, { status: 'created', name: '清理思维链' })
+})
+
+test('lists and imports character-scoped regex separately', async () => {
+  let written
+  installContext({
+    characters: [
+      {
+        name: '测试角色',
+        avatar: 'test.png',
+        data: {
+          extensions: { regex_scripts: [{ id: 'old', scriptName: '旧规则' }] },
+        },
+      },
+    ],
+    writeExtensionField: async (index, field, value) => {
+      written = { index, field, value }
+    },
+  })
+  const adapter = new TavernAdapter()
+  const listed = await adapter.listResources()
+  assert.equal(
+    listed.some((item) => item.kind === 'regexCharacter'),
+    true,
+  )
+
+  const file = new File(
+    [
+      JSON.stringify({
+        scoped: [{ id: 'new', scriptName: '新规则' }],
+        sourceName: '测试角色',
+      }),
+    ],
+    '角色正则.json',
+    { type: 'application/json' },
+  )
+  await adapter.importResource(file, 'regexCharacter', 'overwrite')
+  assert.deepEqual(written, {
+    index: 0,
+    field: 'regex_scripts',
+    value: [{ id: 'new', scriptName: '新规则' }],
+  })
+})
+
+test('lists and imports preset-scoped regex separately', async () => {
+  let written
+  installContext({
+    getPresetManager: async () => ({
+      getAllPresets: async () => ['默认预设'],
+      getCompletionPresetByName: async () => ({
+        name: '默认预设',
+        extensions: { regex_scripts: [{ id: 'old', scriptName: '旧规则' }] },
+      }),
+      writePresetExtensionField: async (value) => {
+        written = value
+      },
+    }),
+  })
+  const adapter = new TavernAdapter()
+  const listed = await adapter.listResources()
+  assert.equal(
+    listed.some((item) => item.kind === 'regexPreset'),
+    true,
+  )
+
+  const file = new File(
+    [
+      JSON.stringify({
+        preset: [{ id: 'new', scriptName: '新规则' }],
+        sourceName: '默认预设',
+      }),
+    ],
+    '预设正则.json',
+    { type: 'application/json' },
+  )
+  await adapter.importResource(file, 'regexPreset', 'overwrite')
+  assert.deepEqual(written, {
+    name: '默认预设',
+    path: 'regex_scripts',
+    value: [{ id: 'new', scriptName: '新规则' }],
+  })
 })

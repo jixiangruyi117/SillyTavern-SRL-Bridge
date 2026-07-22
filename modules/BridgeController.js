@@ -8,6 +8,7 @@ import {
   isBridgeEnvelope,
   sha256,
 } from './Protocol.js'
+import { RelayPort } from './RelayPort.js'
 
 export class BridgeController extends EventTarget {
   constructor(adapter) {
@@ -17,8 +18,10 @@ export class BridgeController extends EventTarget {
     this.port = null
     this.channel = ''
     this.pairCode = ''
+    this.deviceCode = ''
     this.expectedSrlOrigin = ''
     this.incoming = new Map()
+    this.chunkAcks = new Map()
     this.messageChain = Promise.resolve()
     this.handleWindowMessage = this.handleWindowMessage.bind(this)
     window.addEventListener('message', this.handleWindowMessage)
@@ -26,9 +29,11 @@ export class BridgeController extends EventTarget {
 
   open(srlUrl) {
     const target = new URL(srlUrl)
-    if (!['http:', 'https:'].includes(target.protocol)) throw new Error('SRL 地址必须使用 HTTP 或 HTTPS')
+    if (!['http:', 'https:'].includes(target.protocol))
+      throw new Error('SRL 地址必须使用 HTTP 或 HTTPS')
     this.disconnect('正在建立新连接')
     this.channel = crypto.randomUUID()
+    this.deviceCode = ''
     this.pairCode = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0')
     this.expectedSrlOrigin = target.origin
     target.searchParams.set('srlBridge', this.channel)
@@ -42,6 +47,41 @@ export class BridgeController extends EventTarget {
     if (!this.popup) throw new Error('浏览器阻止了新窗口，请允许酒馆打开 SRL')
     this.emitState('waiting', '等待 SRL 确认配对')
     return this.pairCode
+  }
+
+  async openDevice(srlUrl) {
+    const target = new URL(srlUrl)
+    if (!['http:', 'https:'].includes(target.protocol))
+      throw new Error('SRL 地址必须使用 HTTP 或 HTTPS')
+    this.disconnect('正在建立设备码连接')
+    const response = await fetch('/api/plugins/srl-bridge/sessions', {
+      method: 'POST',
+      headers: this.adapter.context.getRequestHeaders(),
+      body: JSON.stringify({ srlUrl: target.href }),
+      cache: 'no-store',
+    })
+    if (!response.ok) {
+      if (response.status === 404) throw new Error('设备码服务尚未安装或酒馆尚未重启')
+      throw new Error(`创建设备码失败（HTTP ${response.status}）`)
+    }
+    const session = await response.json()
+    this.deviceCode = session.code
+    this.channel = `relay-${session.code}`
+    this.pairCode = session.pairCode
+    this.port = new RelayPort(this.adapter.context, session)
+    this.port.onmessage = (event) => {
+      this.messageChain = this.messageChain
+        .then(() => this.handlePortMessage(event.data))
+        .catch((error) =>
+          this.emitLog(error instanceof Error ? error.message : '通信处理失败', 'error'),
+        )
+    }
+    this.port.onerror = (error) => {
+      this.emitState('idle', error instanceof Error ? error.message : '设备码中继已断开')
+    }
+    this.port.start()
+    this.emitState('waiting', '请在另一浏览器的 SRL 输入设备码')
+    return session
   }
 
   handleWindowMessage(event) {
@@ -60,14 +100,25 @@ export class BridgeController extends EventTarget {
     this.port.onmessage = (portEvent) => {
       this.messageChain = this.messageChain
         .then(() => this.handlePortMessage(portEvent.data))
-        .catch((error) => this.emitLog(error instanceof Error ? error.message : '通信处理失败', 'error'))
+        .catch((error) =>
+          this.emitLog(error instanceof Error ? error.message : '通信处理失败', 'error'),
+        )
     }
     this.port.start()
     event.source.postMessage(
       envelope('st-port', {
         channel: this.channel,
         pairCode: this.pairCode,
-        capabilities: ['character', 'worldBook', 'preset', 'regex', 'quickReply', 'theme'],
+        capabilities: [
+          'character',
+          'worldBook',
+          'preset',
+          'regexGlobal',
+          'regexCharacter',
+          'regexPreset',
+          'quickReply',
+          'theme',
+        ],
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
       }),
       window.location.origin,
@@ -79,20 +130,40 @@ export class BridgeController extends EventTarget {
   async handlePortMessage(message) {
     if (!isBridgeEnvelope(message)) return
     try {
-      if (message.type === 'srl-accept') {
+      if (message.type === 'relay-joined') {
+        this.emitState('pairing', '另一浏览器已加入，请核对六位确认码')
+      } else if (message.type === 'srl-accept') {
         if (message.pairCode !== this.pairCode) throw new Error('配对码不一致')
         this.send('st-ready', {
-          capabilities: ['character', 'worldBook', 'preset', 'regex', 'quickReply', 'theme'],
+          capabilities: [
+            'character',
+            'worldBook',
+            'preset',
+            'regexGlobal',
+            'regexCharacter',
+            'regexPreset',
+            'quickReply',
+            'theme',
+          ],
         })
         this.emitState('connected', '已连接 SRL')
       } else if (message.type === 'list-request') {
-        this.send('list-response', { requestId: message.requestId, items: await this.adapter.listResources() })
+        this.send('list-response', {
+          requestId: message.requestId,
+          items: await this.adapter.listResources(),
+        })
       } else if (message.type === 'pull-request') {
         await this.sendResources(message.requestId, message.items ?? [])
       } else if (message.type === 'file-start') {
         this.startIncoming(message)
       } else if (message.type === 'file-chunk') {
         this.receiveChunk(message)
+        await this.send('file-chunk-ack', {
+          transferId: message.transferId,
+          index: message.index,
+        })
+      } else if (message.type === 'file-chunk-ack') {
+        this.resolveChunkAck(message)
       } else if (message.type === 'file-end') {
         await this.finishIncoming(message)
       } else if (message.type === 'disconnect') {
@@ -100,7 +171,13 @@ export class BridgeController extends EventTarget {
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : '酒馆桥接操作失败'
-      this.send('operation-error', { requestId: message.requestId, transferId: message.transferId, error: text })
+      try {
+        await this.send('operation-error', {
+          requestId: message.requestId,
+          transferId: message.transferId,
+          error: text,
+        })
+      } catch {}
       this.emitLog(text, 'error')
     }
   }
@@ -134,7 +211,7 @@ export class BridgeController extends EventTarget {
     })
     for (let offset = 0, index = 0; offset < file.size; offset += CHUNK_SIZE, index += 1) {
       const data = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer()
-      this.send('file-chunk', { requestId, transferId, index, data }, [data])
+      await this.sendChunkAndWait({ requestId, transferId, index, data })
     }
     this.send('file-end', { requestId, transferId })
   }
@@ -142,7 +219,11 @@ export class BridgeController extends EventTarget {
   startIncoming(message) {
     if (message.direction !== 'to-tavern') return
     if (message.size > MAX_FILE_SIZE) throw new Error('单文件超过 256 MB 限制')
-    this.incoming.set(message.transferId, { meta: message, chunks: [], received: 0 })
+    this.incoming.set(message.transferId, {
+      meta: message,
+      chunks: [],
+      received: 0,
+    })
   }
 
   receiveChunk(message) {
@@ -164,31 +245,78 @@ export class BridgeController extends EventTarget {
     if (blob.size !== transfer.meta.size || (await sha256(blob)) !== transfer.meta.sha256) {
       throw new Error(`${transfer.meta.name} 完整性校验失败`)
     }
-    const file = new File([blob], transfer.meta.name, { type: transfer.meta.mimeType })
-    const result = await this.adapter.importResource(file, transfer.meta.kind, transfer.meta.conflictPolicy)
-    this.send('file-result', { requestId: message.requestId, transferId: message.transferId, result })
+    const file = new File([blob], transfer.meta.name, {
+      type: transfer.meta.mimeType,
+    })
+    const result = await this.adapter.importResource(
+      file,
+      transfer.meta.kind,
+      transfer.meta.conflictPolicy,
+      transfer.meta,
+    )
+    this.send('file-result', {
+      requestId: message.requestId,
+      transferId: message.transferId,
+      result,
+    })
     this.emitLog(`${file.name}：${result.status}`, 'success')
+  }
+
+  sendChunkAndWait(payload) {
+    const key = `${payload.transferId}:${payload.index}`
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.chunkAcks.delete(key)
+        reject(new Error('文件分块确认超时'))
+      }, 30_000)
+      this.chunkAcks.set(key, () => {
+        clearTimeout(timer)
+        resolve()
+      })
+      Promise.resolve(this.send('file-chunk', payload, [payload.data])).catch((error) => {
+        clearTimeout(timer)
+        this.chunkAcks.delete(key)
+        reject(error)
+      })
+    })
+  }
+
+  resolveChunkAck(message) {
+    const key = `${message.transferId}:${message.index}`
+    const resolve = this.chunkAcks.get(key)
+    this.chunkAcks.delete(key)
+    resolve?.()
   }
 
   send(type, payload = {}, transfer = []) {
     if (!this.port) throw new Error('尚未连接 SRL')
-    this.port.postMessage(envelope(type, payload), transfer)
+    return this.port.postMessage(envelope(type, payload), transfer)
   }
 
   disconnect(reason = '已断开') {
     if (this.port) {
       try {
-        this.port.postMessage(envelope('disconnect'))
+        Promise.resolve(this.port.postMessage(envelope('disconnect'))).catch(() => {})
       } catch {}
       this.port.close()
     }
     this.port = null
     this.incoming.clear()
+    this.chunkAcks.clear()
     this.emitState('idle', reason)
   }
 
   emitState(status, detail) {
-    this.dispatchEvent(new CustomEvent('state', { detail: { status, detail, pairCode: this.pairCode } }))
+    this.dispatchEvent(
+      new CustomEvent('state', {
+        detail: {
+          status,
+          detail,
+          pairCode: this.pairCode,
+          deviceCode: this.deviceCode,
+        },
+      }),
+    )
   }
 
   emitLog(message, level = 'info') {

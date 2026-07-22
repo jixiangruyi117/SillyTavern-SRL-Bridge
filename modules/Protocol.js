@@ -1,5 +1,5 @@
 export const BRIDGE_PROTOCOL = 'srl-tavern-bridge'
-export const BRIDGE_VERSION = 1
+export const BRIDGE_VERSION = 2
 export const CHUNK_SIZE = 256 * 1024
 export const MAX_FILE_SIZE = 256 * 1024 * 1024
 
@@ -7,7 +7,9 @@ export const RESOURCE_KINDS = Object.freeze({
   CHARACTER: 'character',
   WORLD_BOOK: 'worldBook',
   PRESET: 'preset',
-  REGEX: 'regex',
+  REGEX_GLOBAL: 'regexGlobal',
+  REGEX_CHARACTER: 'regexCharacter',
+  REGEX_PRESET: 'regexPreset',
   QUICK_REPLY: 'quickReply',
   THEME: 'theme',
 })
@@ -19,10 +21,10 @@ export function createId(prefix = 'message') {
 export function isBridgeEnvelope(value) {
   return Boolean(
     value &&
-      typeof value === 'object' &&
-      value.protocol === BRIDGE_PROTOCOL &&
-      value.version === BRIDGE_VERSION &&
-      typeof value.type === 'string',
+    typeof value === 'object' &&
+    value.protocol === BRIDGE_PROTOCOL &&
+    value.version === BRIDGE_VERSION &&
+    typeof value.type === 'string',
   )
 }
 
