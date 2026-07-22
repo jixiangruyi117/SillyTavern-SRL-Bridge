@@ -24,12 +24,19 @@
 粘贴下面的地址：
 
 ```text
-https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge
+https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge.git
 ```
 
 确认第三方扩展安全提示，等待安装完成，然后刷新 SillyTavern。以后可以在酒馆的扩展管理中检查更新。
 
-> 直接 Git 安装只会安装页面扩展。同一浏览器使用不需要服务端插件。
+> 直接 Git 安装只会安装页面扩展。同一浏览器使用不需要服务端插件。不要粘贴 GitHub 的网页子目录、Release ZIP 地址或 `tree/main` 地址。
+
+如果出现“扩展程序安装失败”：
+
+1. 先打开“扩展 → 管理扩展”，搜索 `SRL 酒馆互传`。如果已经存在，说明此前安装其实已经完成，不要重复安装，刷新酒馆即可。
+2. 如果同时看到两份 SRL 扩展，保留带 Git 更新按钮的一份，删除旧的手动安装副本后刷新。
+3. 仍未安装时，确认 GitHub 在当前网络可访问，并只粘贴上面的 `.git` 地址。
+4. SillyTavern 服务端返回 `Directory already exists` 时，表示安装目录已存在；先在扩展管理中更新或删除旧版，不要连续点击安装。
 
 ## 手机或不同浏览器：还要安装服务端插件
 
@@ -43,7 +50,27 @@ https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge
 6. 打开 `SillyTavern/config.yaml`，把 `enableServerPlugins` 设置为 `true`。
 7. 重新启动 SillyTavern。日志出现 `[SRL Bridge] Short-lived device relay loaded` 即加载成功。
 
-服务端插件下载直达：[srl-bridge-server-plugin-v0.3.1.zip](https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge/releases/download/v0.3.1/srl-bridge-server-plugin-v0.3.1.zip)
+服务端插件下载直达：[打开最新 Release](https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge/releases/latest)
+
+### Windows 一键安装服务端插件
+
+酒馆助手和其他页面扩展运行在浏览器里，没有权限写入 `SillyTavern/plugins` 或修改 `config.yaml`，因此不能安全代装服务端插件。Windows 用户可以用仓库提供的安装脚本完成下载、旧版备份、复制和启用配置。
+
+推荐先下载并查看脚本，再在 PowerShell 中运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1 -SillyTavernPath "D:\SillyTavern\SillyTavern"
+```
+
+[下载安装脚本](https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/scripts/install-server-plugin.ps1)
+
+熟悉 PowerShell、确认信任本仓库后，也可以一行安装：
+
+```powershell
+$code = Invoke-RestMethod "https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/scripts/install-server-plugin.ps1"; & ([scriptblock]::Create($code)) -SillyTavernPath "D:\SillyTavern\SillyTavern"
+```
+
+请把路径替换成自己的酒馆根目录。脚本不会启动或关闭酒馆；安装完成后必须完全重启 SillyTavern。直接执行网络脚本具有供应链风险，不信任仓库时请继续使用上面的 ZIP 手动安装。
 
 ## 我应该安装哪个
 
@@ -84,7 +111,7 @@ https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge
 
 - 酒馆助手脚本尚未接入互传。
 - 跨设备连接要求双方都能访问同一个 SillyTavern 地址。
-- 服务端插件目前通过 Release 手动更新；页面扩展可通过酒馆扩展管理更新。
+- 服务端插件目前通过 Release 或 Windows 安装脚本更新；页面扩展可通过酒馆扩展管理更新。
 - Netlify 等静态网站可以托管 SRL 和下载包，但不能代替安装在 SillyTavern 主机上的服务端插件。
 
 ## 开发与验证

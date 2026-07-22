@@ -2,7 +2,7 @@
 
 页面扩展也可以直接在 SillyTavern 的“安装扩展”中粘贴以下地址：
 
-`https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge`
+`https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge.git`
 
 ## 先选你需要的模式
 
@@ -32,6 +32,14 @@
 6. 重新启动 SillyTavern。启动日志出现 `[SRL Bridge] Short-lived device relay loaded` 即安装成功。
 
 服务端插件不能由浏览器页面扩展自动安装，这是为了避免第三方前端扩展越权写入 SillyTavern 服务端目录。更新时请从 GitHub 最新 Release 重新下载并覆盖这两个文件。
+
+Windows 也可下载仓库的 `scripts/install-server-plugin.ps1`，然后运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1 -SillyTavernPath "D:\你的路径\SillyTavern"
+```
+
+脚本会自动下载最新 Release、把旧插件移到酒馆根目录的 `.srl-bridge-backups`、复制新版，并将 `enableServerPlugins` 设为 `true`。安装后仍需完全重启酒馆。
 
 ## 三、跨浏览器连接
 
