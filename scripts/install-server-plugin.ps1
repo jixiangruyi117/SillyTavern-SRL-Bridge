@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $stRoot = [IO.Path]::GetFullPath($SillyTavernPath)
 $serverFile = Join-Path $stRoot 'server.js'
 $configFile = Join-Path $stRoot 'config.yaml'
@@ -29,17 +30,10 @@ try {
       throw "Package not found: $archivePath"
     }
   } else {
-    Write-Host 'Finding the latest SRL Bridge release...'
-    $release = Invoke-RestMethod `
-      -Uri 'https://api.github.com/repos/jixiangruyi117/SillyTavern-SRL-Bridge/releases/latest' `
-      -Headers @{ 'User-Agent' = 'SRL-Bridge-Installer' }
-    $asset = $release.assets |
-      Where-Object { $_.name -like 'srl-bridge-server-plugin-v*.zip' } |
-      Select-Object -First 1
-    if (-not $asset) { throw 'No server plugin package was found in the latest release.' }
-    $archivePath = Join-Path $tempRoot $asset.name
-    Write-Host "Downloading $($asset.name)..."
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath
+    $archivePath = Join-Path $tempRoot 'srl-bridge-server-plugin-latest.zip'
+    $downloadUrl = 'https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge/releases/latest/download/srl-bridge-server-plugin-latest.zip'
+    Write-Host 'Downloading the latest SRL Bridge server plugin...'
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
   }
 
   $extractRoot = Join-Path $tempRoot 'package'

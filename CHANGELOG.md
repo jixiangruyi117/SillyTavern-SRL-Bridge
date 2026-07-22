@@ -3,6 +3,8 @@
 ## 0.3.2 - 2026-07-23
 
 - 增加 Windows 服务端插件一键安装脚本，自动下载最新 Release、备份旧版并启用 `enableServerPlugins`。
+- 安装脚本显式使用 TLS 1.2，兼容旧版 Windows PowerShell 访问 GitHub。
+- 自动下载改用固定的 latest Release 资源，不依赖匿名 GitHub API 配额。
 - Git 安装文档统一使用仓库 `.git` 地址，并增加重复目录、重复扩展和网络失败排查。
 - 移除扩展清单中已弃用的 `requires` / `optional` 空字段。
 

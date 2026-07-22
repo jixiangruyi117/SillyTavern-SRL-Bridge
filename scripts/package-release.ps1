@@ -40,5 +40,10 @@ foreach ($archive in $archives) {
   Compress-Archive -Path (Join-Path $archive.Source '*') -DestinationPath $target -CompressionLevel Optimal
 }
 
+Copy-Item `
+  -LiteralPath (Join-Path $releaseRoot "srl-bridge-server-plugin-v$Version.zip") `
+  -Destination (Join-Path $releaseRoot 'srl-bridge-server-plugin-latest.zip') `
+  -Force
+
 Remove-Item -LiteralPath $stageRoot -Recurse -Force
 Get-ChildItem -LiteralPath $releaseRoot -Filter "*v$Version.zip" | Select-Object Name, Length
