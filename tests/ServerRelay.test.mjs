@@ -61,7 +61,7 @@ test('allows a second browser to join with the short-lived device code', async (
       {
         query: {
           code: created.body.code,
-          target: 'https://srl.example.test/?from=another-browser',
+          target: 'https://another-entry.example.test/?from=android-browser',
         },
         ip: '198.51.100.24',
         user: { profile: { handle: 'different-browser-session' } },
@@ -71,9 +71,41 @@ test('allows a second browser to join with the short-lived device code', async (
     assert.equal(joined.statusCode, 200)
     assert.equal(joined.headers['Cross-Origin-Opener-Policy'], 'unsafe-none')
     assert.match(joined.body, /__SRL_RELAY__/u)
-    assert.match(joined.body, /from=another-browser/u)
+    assert.match(joined.body, /https:\\u002F\\u002Fsrl\.example\.test\\u002F|https:\/\/srl\.example\.test\//u)
     assert.doesNotMatch(joined.body, /<iframe/u)
     assert.match(joined.body, /原来的 HTTPS 资源库/u)
+  } finally {
+    await exit()
+  }
+})
+
+test('allows joining with only the device code', async () => {
+  const routes = new Map()
+  const router = {
+    get(path, handler) {
+      routes.set(`GET ${path}`, handler)
+    },
+    post(path, handler) {
+      routes.set(`POST ${path}`, handler)
+    },
+  }
+  await init(router)
+  try {
+    const created = responseRecorder()
+    routes.get('POST /sessions')(
+      { body: { srlUrl: 'https://srl.example.test/library' } },
+      created,
+    )
+    const joined = responseRecorder()
+    routes.get('GET /join-v2')(
+      {
+        query: { code: created.body.code },
+        ip: '198.51.100.25',
+      },
+      joined,
+    )
+    assert.equal(joined.statusCode, 200)
+    assert.match(joined.body, /__SRL_RELAY__/u)
   } finally {
     await exit()
   }
