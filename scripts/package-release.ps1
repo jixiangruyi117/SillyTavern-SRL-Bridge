@@ -1,4 +1,36 @@
-param([string]$Version = '0.3.4')
+param([string]$Version = '0.3.5')
+
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+function New-PortableZip {
+  param(
+    [Parameter(Mandatory = $true)][string]$Source,
+    [Parameter(Mandatory = $true)][string]$Target
+  )
+
+  if (Test-Path -LiteralPath $Target) {
+    Remove-Item -LiteralPath $Target -Force
+  }
+  $sourceRoot = [IO.Path]::GetFullPath($Source).TrimEnd([char[]]@('\', '/'))
+  $archive = [IO.Compression.ZipFile]::Open(
+    $Target,
+    [IO.Compression.ZipArchiveMode]::Create
+  )
+  try {
+    Get-ChildItem -LiteralPath $sourceRoot -Recurse -File | ForEach-Object {
+      $entryName = $_.FullName.Substring($sourceRoot.Length).TrimStart([char[]]@('\', '/')).Replace('\', '/')
+      [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $archive,
+        $_.FullName,
+        $entryName,
+        [IO.Compression.CompressionLevel]::Optimal
+      ) | Out-Null
+    }
+  } finally {
+    $archive.Dispose()
+  }
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $releaseRoot = Join-Path $repoRoot 'release'
@@ -39,8 +71,7 @@ $archives = @(
 )
 foreach ($archive in $archives) {
   $target = Join-Path $releaseRoot $archive.Name
-  if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
-  Compress-Archive -Path (Join-Path $archive.Source '*') -DestinationPath $target -CompressionLevel Optimal
+  New-PortableZip -Source $archive.Source -Target $target
 }
 
 Copy-Item `

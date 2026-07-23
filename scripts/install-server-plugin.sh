@@ -5,7 +5,8 @@ ST_PATH="${SILLY_TAVERN_HOME:-}"
 CONFIG_PATH=""
 PACKAGE_PATH=""
 NON_INTERACTIVE=0
-DOWNLOAD_URL="https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge/releases/latest/download/srl-bridge-server-plugin-latest.zip"
+RAW_BASE="https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/server-plugin"
+CDN_BASE="https://cdn.jsdelivr.net/gh/jixiangruyi117/SillyTavern-SRL-Bridge@main/server-plugin"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -54,31 +55,56 @@ ST_PATH="$(cd "$ST_PATH" && pwd -P)"
 
 if [[ -z "$CONFIG_PATH" ]]; then CONFIG_PATH="$ST_PATH/config.yaml"; fi
 [[ -f "$CONFIG_PATH" ]] || { echo 'config.yaml was not found. Start SillyTavern once, or pass --config.' >&2; exit 1; }
-command -v unzip >/dev/null || { echo 'unzip is required. In Termux run: pkg install unzip' >&2; exit 1; }
 command -v node >/dev/null || { echo 'node is required by SillyTavern and this installer.' >&2; exit 1; }
 
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/srl-bridge-install.XXXXXX")"
 trap 'rm -rf "$TEMP_ROOT"' EXIT
 
-if [[ -z "$PACKAGE_PATH" ]]; then
-  PACKAGE_PATH="$TEMP_ROOT/srl-bridge-server-plugin-latest.zip"
-  echo 'Downloading the latest SRL Bridge server plugin...'
+download_file() {
+  local url="$1"
+  local output="$2"
   if command -v curl >/dev/null; then
-    curl -fL --retry 3 "$DOWNLOAD_URL" -o "$PACKAGE_PATH"
+    curl -fsSL --retry 3 --retry-all-errors \
+      -A 'SRL-Bridge-Termux-Installer/0.3.5' \
+      "$url" -o "$output"
   elif command -v wget >/dev/null; then
-    wget -O "$PACKAGE_PATH" "$DOWNLOAD_URL"
+    wget -q --tries=3 -O "$output" "$url"
   else
     echo 'curl or wget is required. In Termux run: pkg install curl' >&2
-    exit 1
+    return 1
   fi
-fi
-[[ -f "$PACKAGE_PATH" ]] || { echo "Package not found: $PACKAGE_PATH" >&2; exit 1; }
+}
 
 EXTRACT_ROOT="$TEMP_ROOT/package"
 mkdir -p "$EXTRACT_ROOT"
-unzip -q "$PACKAGE_PATH" -d "$EXTRACT_ROOT"
-ENTRY="$(find "$EXTRACT_ROOT" -type f -path '*/srl-bridge/index.mjs' -print -quit)"
+if [[ -z "$PACKAGE_PATH" ]]; then
+  ENTRY_ROOT="$EXTRACT_ROOT/srl-bridge"
+  mkdir -p "$ENTRY_ROOT"
+  echo 'Downloading the two server-plugin files (no Release ZIP required)...'
+  for name in index.mjs relay.js; do
+    if ! download_file "$RAW_BASE/$name" "$ENTRY_ROOT/$name"; then
+      echo "Raw GitHub download failed; trying the CDN mirror for $name..." >&2
+      download_file "$CDN_BASE/$name" "$ENTRY_ROOT/$name" || {
+        echo 'Download failed. Check the network, or use --package with an offline ZIP.' >&2
+        exit 1
+      }
+    fi
+  done
+  ENTRY="$ENTRY_ROOT/index.mjs"
+else
+  [[ -f "$PACKAGE_PATH" ]] || { echo "Package not found: $PACKAGE_PATH" >&2; exit 1; }
+  command -v unzip >/dev/null || {
+    echo 'unzip is required for --package. In Termux run: pkg install unzip' >&2
+    exit 1
+  }
+  unzip -q "$PACKAGE_PATH" -d "$EXTRACT_ROOT" || {
+    echo 'unzip reported a path warning; checking the extracted files...' >&2
+  }
+  ENTRY="$(find "$EXTRACT_ROOT" -type f -path '*/srl-bridge/index.mjs' -print -quit)"
+fi
 [[ -n "$ENTRY" && -f "$(dirname "$ENTRY")/relay.js" ]] || { echo 'Invalid server plugin package.' >&2; exit 1; }
+grep -q "id: 'srl-bridge'" "$ENTRY" || { echo 'Downloaded index.mjs is not the SRL server plugin.' >&2; exit 1; }
+grep -q 'srl-tavern-bridge' "$(dirname "$ENTRY")/relay.js" || { echo 'Downloaded relay.js is invalid.' >&2; exit 1; }
 
 PLUGINS_ROOT="$ST_PATH/plugins"
 TARGET_PATH="$PLUGINS_ROOT/srl-bridge"

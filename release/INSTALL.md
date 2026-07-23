@@ -47,7 +47,7 @@ Android/Termux、Linux 和 macOS 使用完整包内的 `scripts/install-server-p
 bash scripts/install-server-plugin.sh
 ```
 
-Termux 官方常见路径 `~/SillyTavern` 会自动识别；失败时使用 `--path "/你的路径/SillyTavern"`。iPhone/iPad 无法本机运行完整酒馆，应在实际运行 SillyTavern 的电脑或服务器安装。
+Termux 官方常见路径 `~/SillyTavern` 会自动识别；失败时使用 `--path "/你的路径/SillyTavern"`。联网安装器直接下载两个插件文件，不依赖可能返回 403 的 GitHub Release ZIP，也不需要解压工具；只有使用 `--package 文件.zip` 离线安装时才需要 `unzip`。iPhone/iPad 无法本机运行完整酒馆，应在实际运行 SillyTavern 的电脑或服务器安装。
 
 ## 三、跨浏览器连接
 

@@ -82,10 +82,10 @@ powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1 -SillyTaver
 
 Android 上只有在 Termux 内实际运行 SillyTavern 时才需要安装服务端插件；iPhone/iPad 只是访问其他设备上的酒馆，应在运行酒馆的那台电脑或服务器安装。
 
-Termux 先安装下载与解压工具：
+Termux 先安装下载工具：
 
 ```bash
-pkg install curl unzip -y
+pkg install curl -y
 ```
 
 然后执行自动识别安装：
@@ -100,7 +100,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-S
 bash install-server-plugin.sh --path "/你自己的路径/SillyTavern"
 ```
 
-为了能够选择路径，不要给交互式安装命令追加 `--non-interactive`。不希望直接执行联网脚本时，请先下载并检查内容再运行。
+默认模式直接下载 `index.mjs` 和 `relay.js`，不经过容易返回 403 的 GitHub Release 附件，也不需要 `unzip`；Raw GitHub 失败时会自动改用 jsDelivr 镜像。只有使用离线包 `--package 文件.zip` 时才需要先执行 `pkg install unzip`。为了能够选择路径，不要给交互式安装命令追加 `--non-interactive`。不希望直接执行联网脚本时，请先下载并检查内容再运行。
 
 ## 我应该安装哪个
 
