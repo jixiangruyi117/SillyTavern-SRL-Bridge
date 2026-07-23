@@ -102,14 +102,25 @@ function relayHtml(config) {
   <meta name="color-scheme" content="light dark">
   <title>SRL 跨浏览器中继</title>
   <style>
-    html,body{height:100%;margin:0;background:#111a17;color:#edf1ed;font:15px/1.5 system-ui,sans-serif}
-    #status{position:fixed;z-index:2;inset:0 0 auto;padding:.7rem 1rem;background:#183128;border-bottom:1px solid #527567}
-    iframe{display:block;width:100%;height:100%;border:0;padding-top:3rem;box-sizing:border-box;background:#f4f0e6}
+    *{box-sizing:border-box}
+    html,body{min-height:100%;margin:0;background:#101b17;color:#edf1ed;font:15px/1.6 system-ui,sans-serif}
+    body{display:grid;min-height:100dvh;place-items:center;padding:24px}
+    main{width:min(100%,420px);padding:28px;border:1px solid #557b6d;background:#15251f;box-shadow:0 24px 70px #0007}
+    small{display:block;color:#9fc9b9;font-size:11px;font-weight:700;letter-spacing:.16em}
+    h1{margin:.4rem 0 1rem;font:500 28px/1.15 Georgia,serif}
+    #status{min-height:72px;padding:14px;border-left:3px solid #91c7b2;background:#0c1713}
+    p{margin:1rem 0;color:#b9c9c2}
+    button{width:100%;min-height:48px;border:1px solid #91c7b2;color:#102019;background:#b7dece;font-weight:700;cursor:pointer}
   </style>
 </head>
 <body>
-  <div id="status">正在通过设备码建立安全通道…</div>
-  <iframe id="srl-frame" title="SRL 酒馆资源库"></iframe>
+  <main>
+    <small>SRL DEVICE RELAY</small>
+    <h1>酒馆连接中继</h1>
+    <div id="status">正在把连接交给原来的资源库页面…</div>
+    <p>请保留此窗口。资源和操作仍在原来的 HTTPS 资源库中，不会在这里创建另一份本地数据。</p>
+    <button id="focus-srl" type="button">返回原来的资源库</button>
+  </main>
   <script>window.__SRL_RELAY__=${safeConfig}</script>
   <script src="/api/plugins/srl-bridge/relay.js"></script>
 </body>
@@ -189,9 +200,10 @@ export async function init(router) {
       type: 'relay-joined',
     })
     response.setHeader('Cache-Control', 'no-store')
+    response.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none')
     response.setHeader(
       'Content-Security-Policy',
-      `default-src 'self'; frame-src ${session.srlOrigin}; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'`,
+      `default-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'`,
     )
     return response.type('html').send(
       relayHtml({

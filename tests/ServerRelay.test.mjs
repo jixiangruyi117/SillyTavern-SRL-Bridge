@@ -69,8 +69,11 @@ test('allows a second browser to join with the short-lived device code', async (
       joined,
     )
     assert.equal(joined.statusCode, 200)
+    assert.equal(joined.headers['Cross-Origin-Opener-Policy'], 'unsafe-none')
     assert.match(joined.body, /__SRL_RELAY__/u)
     assert.match(joined.body, /from=another-browser/u)
+    assert.doesNotMatch(joined.body, /<iframe/u)
+    assert.match(joined.body, /原来的 HTTPS 资源库/u)
   } finally {
     await exit()
   }

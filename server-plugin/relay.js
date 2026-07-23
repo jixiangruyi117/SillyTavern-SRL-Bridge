@@ -1,8 +1,10 @@
 const config = window.__SRL_RELAY__
 const status = document.getElementById('status')
-const frame = document.getElementById('srl-frame')
+const focusButton = document.getElementById('focus-srl')
+const host = window.opener
 let port
 let stopped = false
+let invitationTimer
 
 function bytesToBase64(buffer) {
   const bytes = new Uint8Array(buffer)
@@ -76,23 +78,51 @@ async function poll() {
   }
 }
 
-const target = new URL(config.srlUrl)
-target.searchParams.set('srlBridge', `relay-${config.code}`)
-target.searchParams.set('pair', config.pairCode)
-target.searchParams.set('stOrigin', window.location.origin)
-frame.src = target.href
+function invitation() {
+  if (!host || host.closed) {
+    status.textContent = '没有找到原来的资源库页面，请关闭此窗口后重新输入设备码'
+    return
+  }
+  host.postMessage(
+    {
+      protocol: 'srl-tavern-bridge',
+      version: 2,
+      type: 'relay-invitation',
+      channel: `relay-${config.code}`,
+      pairCode: config.pairCode,
+    },
+    config.srlOrigin,
+  )
+}
+
+focusButton.addEventListener('click', () => host?.focus())
+
+if (!host) {
+  status.textContent = '中继窗口必须由原来的资源库页面打开，请返回后重新连接'
+} else {
+  invitation()
+  invitationTimer = window.setInterval(invitation, 800)
+}
 
 window.addEventListener(
   'message',
   (event) => {
-    if (event.source !== frame.contentWindow || event.origin !== config.srlOrigin) return
+    if (event.source !== host || event.origin !== config.srlOrigin) return
     const message = event.data
-    if (message?.protocol !== 'srl-tavern-bridge' || message?.type !== 'srl-hello') return
+    if (
+      message?.protocol !== 'srl-tavern-bridge' ||
+      message?.version !== 2 ||
+      message?.type !== 'srl-hello' ||
+      message?.channel !== `relay-${config.code}`
+    ) {
+      return
+    }
+    window.clearInterval(invitationTimer)
     const channel = new MessageChannel()
     port = channel.port1
     port.onmessage = (portEvent) => void send(portEvent.data)
     port.start()
-    frame.contentWindow.postMessage(
+    host.postMessage(
       {
         protocol: 'srl-tavern-bridge',
         version: 2,
@@ -114,7 +144,7 @@ window.addEventListener(
       config.srlOrigin,
       [channel.port2],
     )
-    status.textContent = `设备码 ${config.code} · 请核对六位确认码`
+    status.textContent = `设备码 ${config.code} · 请回到资源库核对六位确认码`
     void poll()
   },
   { passive: true },
@@ -124,6 +154,7 @@ window.addEventListener(
   'pagehide',
   () => {
     stopped = true
+    window.clearInterval(invitationTimer)
     void request('close', { code: config.code, token: config.token }).catch(() => {})
   },
   { once: true },

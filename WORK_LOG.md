@@ -1,5 +1,12 @@
 # 工作日志
 
+## 2026-07-23 0.3.6 顶层资源库中继
+
+- 设备码加入由“跳转到酒馆并 iframe 嵌入 SRL”改为“原 SRL 保持顶层 + 酒馆中继窗口转交 MessagePort”。
+- 中继窗口不再加载或保存资源，只负责同源轮询酒馆服务端；修复跨站 iframe IndexedDB 被浏览器分区后看似数据不互通的问题。
+- 加入页显式使用 `Cross-Origin-Opener-Policy: unsafe-none`，配合 SRL 的 `same-origin-allow-popups` 保留受控窗口关系。
+- 9 项扩展与服务端插件测试通过。
+
 ## 2026-07-23 · 跨平台路径识别安装器
 
 - 修复 README 一行安装命令写死 `D:\SillyTavern\SillyTavern` 的问题，Windows 安装路径改为可选参数并自动检查当前目录、用户常用目录与各磁盘常见位置。
