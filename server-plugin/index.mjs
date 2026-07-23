@@ -32,12 +32,6 @@ function randomPairCode() {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
 }
 
-function ownerId(request) {
-  return String(
-    request.user?.profile?.handle ?? request.user?.handle ?? request.session?.userId ?? 'default',
-  )
-}
-
 function safeEqual(left, right) {
   if (typeof left !== 'string' || typeof right !== 'string') return false
   const a = Buffer.from(left)
@@ -157,7 +151,6 @@ export async function init(router) {
     const session = {
       code,
       pairCode: randomPairCode(),
-      owner: ownerId(request),
       srlUrl: srlUrl.href,
       srlOrigin: srlUrl.origin,
       controllerToken: randomToken(),
@@ -184,8 +177,6 @@ export async function init(router) {
     const session = sessions.get(code)
     if (!session || session.expiresAt <= Date.now())
       return response.status(404).send('设备码无效或已过期。')
-    if (session.owner !== ownerId(request))
-      return response.status(403).send('请先登录创建该设备码的酒馆用户。')
     const target = validHttpUrl(request.query.target)
     if (!target || target.origin !== session.srlOrigin)
       return response.status(400).send('SRL 来源与设备码不一致。')
@@ -222,7 +213,7 @@ export async function init(router) {
     const code = String(request.body?.code ?? '').toUpperCase()
     const session = sessions.get(code)
     const role = sessionRole(session ?? {}, request.body?.token)
-    if (!session || !role || session.owner !== ownerId(request)) return response.sendStatus(403)
+    if (!session || !role) return response.sendStatus(403)
     if (session.expiresAt <= Date.now()) return response.status(410).json({ error: '设备码已过期' })
     try {
       queueMessage(
@@ -243,7 +234,7 @@ export async function init(router) {
     const code = String(request.body?.code ?? '').toUpperCase()
     const session = sessions.get(code)
     const role = sessionRole(session ?? {}, request.body?.token)
-    if (!session || !role || session.owner !== ownerId(request)) return response.sendStatus(403)
+    if (!session || !role) return response.sendStatus(403)
     if (session.expiresAt <= Date.now())
       return response.status(410).json({ closed: true, messages: [] })
     if (session.queues[role].length) {
@@ -270,7 +261,7 @@ export async function init(router) {
     const code = String(request.body?.code ?? '').toUpperCase()
     const session = sessions.get(code)
     const role = sessionRole(session ?? {}, request.body?.token)
-    if (!session || !role || session.owner !== ownerId(request)) return response.sendStatus(403)
+    if (!session || !role) return response.sendStatus(403)
     removeSession(code)
     return response.sendStatus(204)
   })

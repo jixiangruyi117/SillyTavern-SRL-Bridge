@@ -43,7 +43,7 @@ export class BridgeController extends EventTarget {
     relay.searchParams.set('target', target.href)
     relay.searchParams.set('srlOrigin', target.origin)
     relay.searchParams.set('channel', this.channel)
-    this.popup = window.open(relay.href, 'srl-tavern-bridge')
+    this.popup = window.open(relay.href, `srl-tavern-bridge-${this.channel}`)
     if (!this.popup) throw new Error('浏览器阻止了新窗口，请允许酒馆打开 SRL')
     this.emitState('waiting', '等待 SRL 确认配对')
     return this.pairCode
@@ -301,6 +301,8 @@ export class BridgeController extends EventTarget {
       this.port.close()
     }
     this.port = null
+    if (this.popup && !this.popup.closed) this.popup.close()
+    this.popup = null
     this.incoming.clear()
     this.chunkAcks.clear()
     this.emitState('idle', reason)

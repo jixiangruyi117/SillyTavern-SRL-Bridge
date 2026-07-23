@@ -23,7 +23,11 @@ try {
   fail(error instanceof Error ? error.message : '地址无效')
 }
 
-frame.addEventListener('load', () => state.setAttribute('data-ready', 'true'))
+frame.addEventListener('load', () => {
+  state.setAttribute('data-ready', 'true')
+  state.querySelector('strong').textContent = 'SRL 已打开，正在连接酒馆'
+  state.querySelector('small').textContent = '请保持本窗口打开；若需要登录，完成后会自动继续配对。'
+})
 
 window.addEventListener('message', (event) => {
   const message = event.data
