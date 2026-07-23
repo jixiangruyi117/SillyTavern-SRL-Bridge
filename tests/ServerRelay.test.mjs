@@ -57,7 +57,7 @@ test('allows a second browser to join with the short-lived device code', async (
     assert.match(created.body.code, /^[2-9A-HJ-NP-Z]{8}$/u)
 
     const joined = responseRecorder()
-    routes.get('GET /join')(
+    routes.get('GET /join-v2')(
       {
         query: {
           code: created.body.code,

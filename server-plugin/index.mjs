@@ -180,7 +180,7 @@ export async function init(router) {
     })
   })
 
-  router.get('/join', (request, response) => {
+  const joinRelay = (request, response) => {
     if (rateLimited(request)) return response.status(429).send('尝试过于频繁，请一分钟后重试。')
     const code = String(request.query.code ?? '')
       .trim()
@@ -214,7 +214,9 @@ export async function init(router) {
         srlOrigin: session.srlOrigin,
       }),
     )
-  })
+  }
+
+  router.get('/join-v2', joinRelay)
 
   router.get('/relay.js', (_request, response) => {
     response.setHeader('Cache-Control', 'no-store')
