@@ -39,11 +39,9 @@ export class BridgeController extends EventTarget {
     target.searchParams.set('srlBridge', this.channel)
     target.searchParams.set('pair', this.pairCode)
     target.searchParams.set('stOrigin', window.location.origin)
-    const relay = new URL('../bridge.html', import.meta.url)
-    relay.searchParams.set('target', target.href)
-    relay.searchParams.set('srlOrigin', target.origin)
-    relay.searchParams.set('channel', this.channel)
-    this.popup = window.open(relay.href, `srl-tavern-bridge-${this.channel}`)
+    // 直接打开 SRL，避免 Android 把中间页打开成独立标签后丢失 opener，
+    // 也避免 iframe 产生一套按顶层站点分区的空白 IndexedDB。
+    this.popup = window.open(target.href, `srl-tavern-bridge-${this.channel}`)
     if (!this.popup) throw new Error('浏览器阻止了新窗口，请允许酒馆打开 SRL')
     this.emitState('waiting', '等待 SRL 确认配对')
     return this.pairCode
@@ -85,13 +83,12 @@ export class BridgeController extends EventTarget {
   }
 
   handleWindowMessage(event) {
-    if (event.origin !== window.location.origin || event.source !== this.popup) return
+    if (event.origin !== this.expectedSrlOrigin || event.source !== this.popup) return
     const message = event.data
     if (
       !isBridgeEnvelope(message) ||
       message.type !== 'srl-hello' ||
-      message.channel !== this.channel ||
-      message.forwardedOrigin !== this.expectedSrlOrigin
+      message.channel !== this.channel
     )
       return
     this.port?.close()
@@ -121,7 +118,7 @@ export class BridgeController extends EventTarget {
         ],
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
       }),
-      window.location.origin,
+      this.expectedSrlOrigin,
       [pair.port2],
     )
     this.emitState('pairing', '请在 SRL 核对配对码')

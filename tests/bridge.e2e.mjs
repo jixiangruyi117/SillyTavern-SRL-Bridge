@@ -37,9 +37,8 @@ try {
   }, process.env.SRL_URL || 'http://127.0.0.1:5173/')
   const popupPromise = tavern.waitForEvent('popup')
   await tavern.locator('#srl-bridge-connect').evaluate((button) => button.click())
-  const relay = await popupPromise
-  relay.on('pageerror', (error) => errors.push(`中继页: ${error.message}`))
-  const srl = relay.frameLocator('#srl-frame')
+  const srl = await popupPromise
+  srl.on('pageerror', (error) => errors.push(`SRL: ${error.message}`))
   await srl.locator('.tavern-bridge-pairing code').waitFor({ timeout: 20_000 })
 
   const tavernCode = (await tavern.locator('#srl-bridge-code').textContent())?.replace(/\D/g, '')
@@ -49,7 +48,7 @@ try {
   const accept = srl.getByRole('button', { name: '数字一致，允许本次连接' })
   if (!(await accept.count())) {
     throw new Error(
-      `SRL 配对按钮缺失：${await srl.locator('.tavern-bridge-pairing').innerText()}\n酒馆状态：${await tavern.locator('#srl-bridge-status').innerText()}\n中继地址：${relay.url()}`,
+      `SRL 配对按钮缺失：${await srl.locator('.tavern-bridge-pairing').innerText()}\n酒馆状态：${await tavern.locator('#srl-bridge-status').innerText()}\nSRL 地址：${srl.url()}`,
     )
   }
   await accept.click()
@@ -66,7 +65,7 @@ try {
   await srl.locator('.tavern-bridge-report li').first().waitFor({ timeout: 60_000 })
   const pullReport = await srl.locator('.tavern-bridge-report li').first().innerText()
   if (!pullReport.includes('从酒馆接收 1 项')) throw new Error(`拉取资源结果异常：${pullReport}`)
-  await relay.setViewportSize({ width: 390, height: 844 })
+  await srl.setViewportSize({ width: 390, height: 844 })
   const overflow = await srl.locator('html').evaluate(
     (root) => root.scrollWidth > root.clientWidth + 1,
   )

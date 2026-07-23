@@ -188,9 +188,6 @@ export async function init(router) {
     const session = sessions.get(code)
     if (!session || session.expiresAt <= Date.now())
       return response.status(404).send('设备码无效或已过期。')
-    const target = validHttpUrl(request.query.target)
-    if (!target || target.origin !== session.srlOrigin)
-      return response.status(400).send('SRL 来源与设备码不一致。')
     if (session.participantToken) return response.status(409).send('此设备码已经被使用。')
     session.participantToken = randomToken()
     session.expiresAt = Date.now() + ACTIVE_TTL
@@ -210,7 +207,9 @@ export async function init(router) {
         code,
         token: session.participantToken,
         pairCode: session.pairCode,
-        srlUrl: target.href,
+        // 设备码创建时已经锁定可信 SRL 地址。加入端只提交短时设备码，
+        // 不再用可能经过重定向或不同入口的当前页面地址重复判定来源。
+        srlUrl: session.srlUrl,
         srlOrigin: session.srlOrigin,
       }),
     )
