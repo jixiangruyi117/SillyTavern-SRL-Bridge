@@ -154,8 +154,12 @@ if [[ -n "${BACKUP_PATH:-}" && -e "$BACKUP_PATH" ]]; then
   fi
 fi
 
-echo 'SRL device relay server plugin installed.'
+echo ''
+echo 'SUCCESS: SRL server relay plugin has been installed.'
+echo 'Note: this is a server plugin under SillyTavern/plugins, not the front-end extension shown in the extension download page.'
 echo "SillyTavern root: $ST_PATH"
 echo "Plugin directory: $TARGET_PATH"
 echo "Config file: $CONFIG_PATH"
-echo 'Fully restart SillyTavern. The startup log should contain: [SRL Bridge] Short-lived device relay loaded'
+echo 'Next: fully stop and restart SillyTavern.'
+echo 'Verify: the startup log should contain: [SRL Bridge] Short-lived device relay loaded'
+echo 'If you do not see it, make sure the running SillyTavern uses the SillyTavern root printed above.'

@@ -169,11 +169,14 @@ try {
   }
 
   Write-Host ''
-  Write-Host 'SRL device relay server plugin installed.' -ForegroundColor Green
+  Write-Host 'SUCCESS: SRL server relay plugin has been installed.' -ForegroundColor Green
+  Write-Host 'Note: this is a server plugin under SillyTavern/plugins, not the front-end extension shown in the extension download page.'
   Write-Host "SillyTavern root: $stRoot"
   Write-Host "Plugin directory: $targetPath"
   Write-Host "Config file: $configFile"
-  Write-Host 'Fully restart SillyTavern. The startup log should contain: [SRL Bridge] Short-lived device relay loaded'
+  Write-Host 'Next: fully stop and restart SillyTavern.'
+  Write-Host 'Verify: the startup log should contain: [SRL Bridge] Short-lived device relay loaded'
+  Write-Host 'If you do not see it, make sure the running SillyTavern uses the SillyTavern root printed above.'
 } catch {
   if (-not $installCompleted -and $backupPath -and (Test-Path -LiteralPath $backupPath)) {
     if (Test-Path -LiteralPath $targetPath) {
