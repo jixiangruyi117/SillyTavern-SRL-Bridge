@@ -251,7 +251,7 @@ export class BridgeController extends EventTarget {
       transfer.meta.conflictPolicy,
       transfer.meta,
     )
-    this.send('file-result', {
+    await this.send('file-result', {
       requestId: message.requestId,
       transferId: message.transferId,
       result,

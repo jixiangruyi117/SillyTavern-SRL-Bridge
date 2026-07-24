@@ -5,6 +5,7 @@ const host = window.opener
 let port
 let stopped = false
 let invitationTimer
+let sendChain = Promise.resolve()
 
 function bytesToBase64(buffer) {
   const bytes = new Uint8Array(buffer)
@@ -60,6 +61,17 @@ async function send(message) {
     token: config.token,
     message: encode(message),
   })
+}
+
+function queueSend(message) {
+  sendChain = sendChain
+    .then(() => send(message))
+    .catch((error) => {
+      status.textContent = error instanceof Error ? error.message : '中继发送失败'
+      stopped = true
+      throw error
+    })
+  return sendChain
 }
 
 async function poll() {
@@ -126,7 +138,7 @@ window.addEventListener(
     window.clearInterval(invitationTimer)
     const channel = new MessageChannel()
     port = channel.port1
-    port.onmessage = (portEvent) => void send(portEvent.data)
+    port.onmessage = (portEvent) => void queueSend(portEvent.data).catch(() => {})
     port.start()
     host.postMessage(
       {
