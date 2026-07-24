@@ -2,8 +2,10 @@ import {
   BRIDGE_PROTOCOL,
   BRIDGE_VERSION,
   CHUNK_SIZE,
+  DEFAULT_IN_FLIGHT_CHUNKS,
   MAX_IN_FLIGHT_CHUNKS,
   MAX_FILE_SIZE,
+  MIN_IN_FLIGHT_CHUNKS,
   createId,
   envelope,
   isBridgeEnvelope,
@@ -277,16 +279,40 @@ export class BridgeController extends EventTarget {
   }
 
   async sendFileChunks(file, requestId, transferId) {
-    const pending = []
+    const pending = new Set()
+    let inFlightLimit = DEFAULT_IN_FLIGHT_CHUNKS
+    let fastAckStreak = 0
+    const adjustWindow = (elapsedMs) => {
+      if (elapsedMs < 350 && inFlightLimit < MAX_IN_FLIGHT_CHUNKS) {
+        fastAckStreak += 1
+        if (fastAckStreak >= inFlightLimit * 2) {
+          inFlightLimit += 1
+          fastAckStreak = 0
+        }
+        return
+      }
+      fastAckStreak = 0
+      if (elapsedMs > 1500 && inFlightLimit > MIN_IN_FLIGHT_CHUNKS) {
+        inFlightLimit -= 1
+      }
+    }
     try {
       for (let offset = 0, index = 0; offset < file.size; offset += CHUNK_SIZE, index += 1) {
         const data = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer()
-        pending.push(this.sendChunkAndWait({ requestId, transferId, index, data }))
-        if (pending.length >= MAX_IN_FLIGHT_CHUNKS) await pending.shift()
+        const sentAt = performance.now()
+        const ack = this.sendChunkAndWait({ requestId, transferId, index, data }).then(() => {
+          adjustWindow(performance.now() - sentAt)
+        })
+        pending.add(ack)
+        ack.then(
+          () => pending.delete(ack),
+          () => pending.delete(ack),
+        )
+        if (pending.size >= inFlightLimit) await Promise.race(pending)
       }
-      await Promise.all(pending)
+      await Promise.all([...pending])
     } catch (error) {
-      await Promise.allSettled(pending)
+      await Promise.allSettled([...pending])
       throw error
     }
   }

@@ -1,7 +1,9 @@
 export const BRIDGE_PROTOCOL = 'srl-tavern-bridge'
 export const BRIDGE_VERSION = 2
 export const CHUNK_SIZE = 256 * 1024
-export const MAX_IN_FLIGHT_CHUNKS = 4
+export const MIN_IN_FLIGHT_CHUNKS = 2
+export const DEFAULT_IN_FLIGHT_CHUNKS = 4
+export const MAX_IN_FLIGHT_CHUNKS = 8
 export const MAX_FILE_SIZE = 256 * 1024 * 1024
 
 export const RESOURCE_KINDS = Object.freeze({
