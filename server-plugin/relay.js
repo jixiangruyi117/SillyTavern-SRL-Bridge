@@ -102,6 +102,12 @@ if (!host) {
 } else {
   invitation()
   invitationTimer = window.setInterval(invitation, 800)
+  window.setTimeout(() => {
+    if (!port && !stopped) {
+      status.textContent =
+        '原来的资源库页面没有接收到中继邀请。请回到资源库确认是否出现六位确认码；如果没有，请刷新资源库后重试，或检查浏览器是否阻止弹窗/跨窗口通信。'
+    }
+  }, 12_000)
 }
 
 window.addEventListener(
