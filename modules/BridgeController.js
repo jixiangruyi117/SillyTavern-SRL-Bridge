@@ -2,6 +2,7 @@ import {
   BRIDGE_PROTOCOL,
   BRIDGE_VERSION,
   CHUNK_SIZE,
+  MAX_IN_FLIGHT_CHUNKS,
   MAX_FILE_SIZE,
   createId,
   envelope,
@@ -206,10 +207,7 @@ export class BridgeController extends EventTarget {
       size: file.size,
       sha256: await sha256(file),
     })
-    for (let offset = 0, index = 0; offset < file.size; offset += CHUNK_SIZE, index += 1) {
-      const data = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer()
-      await this.sendChunkAndWait({ requestId, transferId, index, data })
-    }
+    await this.sendFileChunks(file, requestId, transferId)
     this.send('file-end', { requestId, transferId })
   }
 
@@ -276,6 +274,21 @@ export class BridgeController extends EventTarget {
         reject(error)
       })
     })
+  }
+
+  async sendFileChunks(file, requestId, transferId) {
+    const pending = []
+    try {
+      for (let offset = 0, index = 0; offset < file.size; offset += CHUNK_SIZE, index += 1) {
+        const data = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer()
+        pending.push(this.sendChunkAndWait({ requestId, transferId, index, data }))
+        if (pending.length >= MAX_IN_FLIGHT_CHUNKS) await pending.shift()
+      }
+      await Promise.all(pending)
+    } catch (error) {
+      await Promise.allSettled(pending)
+      throw error
+    }
   }
 
   resolveChunkAck(message) {
