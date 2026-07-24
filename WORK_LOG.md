@@ -78,3 +78,9 @@
 - Termux 默认安装由 Release ZIP 改为直接下载 `index.mjs` 与 `relay.js`，避开 GitHub 附件 403；Raw GitHub 失败自动尝试 jsDelivr。
 - 离线 ZIP 模式不再把 Info-ZIP 的 Windows 分隔符警告直接当成失败，而是以最终文件结构和内容特征校验为准。
 - Windows 发布脚本使用 .NET ZipArchive 显式生成 `/` 分隔的条目，保证 Termux、Linux、macOS 可解压。
+## 2026-07-25 旧版发布包清理
+
+- 用户要求：确认 GitHub 上的酒馆扩展是否同步，并清理无用文件，避免 SillyTavern 安装/更新看到旧交付内容。
+- 实际处理：扩展仓库 `release/` 只保留当前 `0.3.8` 安装包和 `srl-bridge-server-plugin-latest.zip`，删除 `0.3.0` 至 `0.3.7` 的旧完整包、页面扩展包和服务端插件包。
+- 同步处理：删除未跟踪的临时 `pnpm-lock.yaml`；源码、manifest、README、当前 release 包不变。
+- 验证：`pnpm check` 通过；结构检查和 10 项互传测试全部通过。
