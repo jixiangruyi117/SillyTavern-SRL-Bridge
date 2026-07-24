@@ -7,6 +7,10 @@ let stopped = false
 let invitationTimer
 let sendChain = Promise.resolve()
 
+function relayBaseUrl() {
+  return new URL(config.relayBase || '/api/plugins/srl-bridge/', window.location.origin).href
+}
+
 function bytesToBase64(buffer) {
   const bytes = new Uint8Array(buffer)
   let binary = ''
@@ -102,12 +106,21 @@ function invitation() {
       type: 'relay-invitation',
       channel: `relay-${config.code}`,
       pairCode: config.pairCode,
+      relayBase: relayBaseUrl(),
+      participantToken: config.token,
     },
     config.srlOrigin,
   )
 }
 
-focusButton.addEventListener('click', () => host?.focus())
+focusButton.addEventListener('click', () => {
+  if (host && !host.closed) {
+    host.focus()
+    status.textContent = '已请求切回原来的资源库。若浏览器没有自动切换，请手动回到原 SRL 标签页。'
+    return
+  }
+  window.location.href = config.srlUrl
+})
 
 if (!host) {
   status.textContent = '中继窗口必须由原来的资源库页面打开，请返回后重新连接'
@@ -173,7 +186,7 @@ window.addEventListener(
   () => {
     stopped = true
     window.clearInterval(invitationTimer)
-    void request('close', { code: config.code, token: config.token }).catch(() => {})
+    port?.close?.()
   },
   { once: true },
 )

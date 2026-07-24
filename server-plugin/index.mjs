@@ -61,6 +61,14 @@ function removeSession(code) {
   sessions.delete(code)
 }
 
+function refreshActiveSession(session, role) {
+  if (!session.participantToken) return
+  const now = Date.now()
+  session.lastSeen[role] = now
+  const oldestSeen = Math.min(session.lastSeen.controller || now, session.lastSeen.participant || now)
+  session.expiresAt = oldestSeen + ACTIVE_TTL
+}
+
 function prune() {
   const now = Date.now()
   for (const [code, session] of sessions) {
@@ -69,6 +77,16 @@ function prune() {
   for (const [key, value] of attempts) {
     if (value.resetAt <= now) attempts.delete(key)
   }
+}
+
+function setRelayCors(request, response, session) {
+  const origin = request.headers?.origin
+  if (!origin || origin !== session?.srlOrigin) return
+  response.setHeader('Access-Control-Allow-Origin', origin)
+  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  response.setHeader('Access-Control-Max-Age', '600')
+  response.setHeader('Vary', 'Origin')
 }
 
 function rateLimited(request) {
@@ -167,6 +185,7 @@ export async function init(router) {
       controllerToken: randomToken(),
       participantToken: '',
       expiresAt: now + WAITING_TTL,
+      lastSeen: { controller: now, participant: 0 },
       queues: { controller: [], participant: [] },
       queueBytes: { controller: 0, participant: 0 },
       waiters: { controller: undefined, participant: undefined },
@@ -190,6 +209,8 @@ export async function init(router) {
       return response.status(404).send('设备码无效或已过期。')
     if (session.participantToken) return response.status(409).send('此设备码已经被使用。')
     session.participantToken = randomToken()
+    session.lastSeen.controller = Date.now()
+    session.lastSeen.participant = Date.now()
     session.expiresAt = Date.now() + ACTIVE_TTL
     queueMessage(session, 'controller', {
       protocol: 'srl-tavern-bridge',
@@ -211,6 +232,7 @@ export async function init(router) {
         // 不再用可能经过重定向或不同入口的当前页面地址重复判定来源。
         srlUrl: session.srlUrl,
         srlOrigin: session.srlOrigin,
+        relayBase: '/api/plugins/srl-bridge/',
       }),
     )
   }
@@ -222,11 +244,25 @@ export async function init(router) {
     response.type('text/javascript').send(relayScript)
   })
 
+  if (typeof router.options === 'function') {
+    const preflight = (_request, response) => {
+      response.setHeader('Access-Control-Allow-Origin', '*')
+      response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+      response.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      response.setHeader('Access-Control-Max-Age', '600')
+      return response.sendStatus(204)
+    }
+    router.options('/messages', preflight)
+    router.options('/poll', preflight)
+    router.options('/close', preflight)
+  }
+
   router.post('/messages', (request, response) => {
     const code = String(request.body?.code ?? '').toUpperCase()
     const session = sessions.get(code)
     const role = sessionRole(session ?? {}, request.body?.token)
     if (!session || !role) return response.sendStatus(403)
+    setRelayCors(request, response, session)
     if (session.expiresAt <= Date.now()) return response.status(410).json({ error: '设备码已过期' })
     try {
       queueMessage(
@@ -234,7 +270,7 @@ export async function init(router) {
         role === 'controller' ? 'participant' : 'controller',
         request.body?.message,
       )
-      session.expiresAt = Date.now() + ACTIVE_TTL
+      refreshActiveSession(session, role)
       return response.sendStatus(204)
     } catch (error) {
       return response.status(413).json({
@@ -248,8 +284,10 @@ export async function init(router) {
     const session = sessions.get(code)
     const role = sessionRole(session ?? {}, request.body?.token)
     if (!session || !role) return response.sendStatus(403)
+    setRelayCors(request, response, session)
     if (session.expiresAt <= Date.now())
       return response.status(410).json({ closed: true, messages: [] })
+    refreshActiveSession(session, role)
     if (session.queues[role].length) {
       const entries = session.queues[role].splice(0)
       session.queueBytes[role] = 0
@@ -275,6 +313,7 @@ export async function init(router) {
     const session = sessions.get(code)
     const role = sessionRole(session ?? {}, request.body?.token)
     if (!session || !role) return response.sendStatus(403)
+    setRelayCors(request, response, session)
     removeSession(code)
     return response.sendStatus(204)
   })
