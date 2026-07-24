@@ -5,6 +5,7 @@ ST_PATH="${SILLY_TAVERN_HOME:-}"
 CONFIG_PATH=""
 PACKAGE_PATH=""
 NON_INTERACTIVE=0
+KEEP_BACKUP=0
 RAW_BASE="https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/server-plugin"
 CDN_BASE="https://cdn.jsdelivr.net/gh/jixiangruyi117/SillyTavern-SRL-Bridge@main/server-plugin"
 
@@ -14,6 +15,7 @@ while [[ $# -gt 0 ]]; do
     --config) CONFIG_PATH="${2:-}"; shift 2 ;;
     --package) PACKAGE_PATH="${2:-}"; shift 2 ;;
     --non-interactive) NON_INTERACTIVE=1; shift ;;
+    --keep-backup) KEEP_BACKUP=1; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -58,7 +60,20 @@ if [[ -z "$CONFIG_PATH" ]]; then CONFIG_PATH="$ST_PATH/config.yaml"; fi
 command -v node >/dev/null || { echo 'node is required by SillyTavern and this installer.' >&2; exit 1; }
 
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/srl-bridge-install.XXXXXX")"
-trap 'rm -rf "$TEMP_ROOT"' EXIT
+BACKUP_PATH=""
+INSTALL_DONE=0
+
+cleanup() {
+  local exit_code=$?
+  if [[ $exit_code -ne 0 && -n "${BACKUP_PATH:-}" && -e "$BACKUP_PATH" ]]; then
+    rm -rf "$TARGET_PATH"
+    mv "$BACKUP_PATH" "$TARGET_PATH"
+    echo "Install failed; the previous server plugin was restored to: $TARGET_PATH" >&2
+  fi
+  rm -rf "$TEMP_ROOT"
+  exit "$exit_code"
+}
+trap cleanup EXIT
 
 download_file() {
   local url="$1"
@@ -114,7 +129,7 @@ if [[ -e "$TARGET_PATH" ]]; then
   mkdir -p "$BACKUP_ROOT"
   BACKUP_PATH="$BACKUP_ROOT/srl-bridge-$(date +%Y%m%d-%H%M%S)"
   mv "$TARGET_PATH" "$BACKUP_PATH"
-  echo "The previous server plugin was backed up to: $BACKUP_PATH"
+  echo "The previous server plugin was moved aside temporarily: $BACKUP_PATH"
 fi
 cp -R "$(dirname "$ENTRY")" "$TARGET_PATH"
 
@@ -128,6 +143,16 @@ config = pattern.test(config)
   : `${config.replace(/\s*$/, '')}\n\nenableServerPlugins: true\n`;
 fs.writeFileSync(file, config);
 NODE
+
+INSTALL_DONE=1
+if [[ -n "${BACKUP_PATH:-}" && -e "$BACKUP_PATH" ]]; then
+  if [[ $KEEP_BACKUP -eq 1 ]]; then
+    echo "The previous server plugin was kept as a backup: $BACKUP_PATH"
+  else
+    rm -rf "$BACKUP_PATH"
+    echo 'The previous server plugin was removed after the new version was installed.'
+  fi
+fi
 
 echo 'SRL device relay server plugin installed.'
 echo "SillyTavern root: $ST_PATH"

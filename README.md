@@ -97,6 +97,8 @@ pkg install curl -y
 bash <(curl -fsSL https://raw.githubusercontent.com/jixiangruyi117/SillyTavern-SRL-Bridge/main/scripts/install-server-plugin.sh)
 ```
 
+安装器的更新策略：先下载并校验新插件文件；确认新文件有效后才移动旧的 `plugins/srl-bridge`；新插件安装和配置写入成功后，默认删除旧插件临时备份。若中途失败，会自动把旧插件恢复回 `plugins/srl-bridge`。如果你想手动保留旧版备份，可以追加 `--keep-backup`。
+
 脚本优先识别官方 Termux 常见的 `~/SillyTavern`，也会在用户目录内查找；存在多个副本时会让用户选择。这里使用进程替换而不是 `curl | bash`，确保安装器仍能读取你的路径选择。Linux/macOS 同样可用。自动识别失败时下载脚本后运行：
 
 ```bash

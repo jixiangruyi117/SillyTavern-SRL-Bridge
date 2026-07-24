@@ -47,6 +47,8 @@ Android/Termux、Linux 和 macOS 使用完整包内的 `scripts/install-server-p
 bash scripts/install-server-plugin.sh
 ```
 
+安装器会先下载并校验新插件；新插件可用后才替换旧的 `plugins/srl-bridge`；安装成功后默认删除旧插件临时备份。如果下载、复制或配置写入失败，会自动恢复旧插件。需要保留旧版备份时追加 `--keep-backup`。
+
 Termux 官方常见路径 `~/SillyTavern` 会自动识别；失败时使用 `--path "/你的路径/SillyTavern"`。联网安装器直接下载两个插件文件，不依赖可能返回 403 的 GitHub Release ZIP，也不需要解压工具；只有使用 `--package 文件.zip` 离线安装时才需要 `unzip`。iPhone/iPad 无法本机运行完整酒馆，应在实际运行 SillyTavern 的电脑或服务器安装。
 
 ## 三、跨浏览器连接

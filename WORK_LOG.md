@@ -84,3 +84,10 @@
 - 实际处理：扩展仓库 `release/` 只保留当前 `0.3.8` 安装包和 `srl-bridge-server-plugin-latest.zip`，删除 `0.3.0` 至 `0.3.7` 的旧完整包、页面扩展包和服务端插件包。
 - 同步处理：删除未跟踪的临时 `pnpm-lock.yaml`；源码、manifest、README、当前 release 包不变。
 - 验证：`pnpm check` 通过；结构检查和 10 项互传测试全部通过。
+## 2026-07-25 安装器替换策略调整
+
+- 用户确认 Termux 正确安装命令执行成功，同时要求更新服务端插件时不要长期保留旧插件，除非新版本安装失败。
+- 实际处理：Termux/Linux/macOS 与 Windows 安装器均改为先下载并校验新插件，再临时移走旧 `plugins/srl-bridge`；新插件复制和 `enableServerPlugins` 配置写入全部成功后，默认删除旧插件临时备份。
+- 失败保护：如果下载、复制或配置写入中途失败，安装器会自动删除残缺的新目录，并把旧插件恢复回 `plugins/srl-bridge`。
+- 兼容保留：新增 `--keep-backup` / `-KeepBackup` 选项，用户需要手动保留旧版时可显式启用。
+- 验证：重新生成 0.3.8 发布包；Shell 脚本语法检查、PowerShell 脚本解析和 `pnpm check` 均通过。

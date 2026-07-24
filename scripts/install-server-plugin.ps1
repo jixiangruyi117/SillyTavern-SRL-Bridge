@@ -2,7 +2,8 @@ param(
   [string]$SillyTavernPath = '',
   [string]$ConfigPath = '',
   [string]$PackagePath = '',
-  [switch]$NonInteractive
+  [switch]$NonInteractive,
+  [switch]$KeepBackup
 )
 
 $ErrorActionPreference = 'Stop'
@@ -113,6 +114,8 @@ if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) {
 
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("srl-bridge-install-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
+$backupPath = ''
+$installCompleted = $false
 
 try {
   if ($PackagePath) {
@@ -142,7 +145,7 @@ try {
     New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
     $backupPath = Join-Path $backupRoot ("srl-bridge-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     Move-Item -LiteralPath $targetPath -Destination $backupPath
-    Write-Host "The previous server plugin was backed up to: $backupPath"
+    Write-Host "The previous server plugin was moved aside temporarily: $backupPath"
   }
   Copy-Item -LiteralPath $entry.Directory.FullName -Destination $targetPath -Recurse
 
@@ -155,12 +158,31 @@ try {
     Add-Content -LiteralPath $configFile -Value "`nenableServerPlugins: true" -Encoding utf8
   }
 
+  $installCompleted = $true
+  if ($backupPath -and (Test-Path -LiteralPath $backupPath)) {
+    if ($KeepBackup) {
+      Write-Host "The previous server plugin was kept as a backup: $backupPath"
+    } else {
+      Remove-Item -LiteralPath $backupPath -Recurse -Force
+      Write-Host 'The previous server plugin was removed after the new version was installed.'
+    }
+  }
+
   Write-Host ''
   Write-Host 'SRL device relay server plugin installed.' -ForegroundColor Green
   Write-Host "SillyTavern root: $stRoot"
   Write-Host "Plugin directory: $targetPath"
   Write-Host "Config file: $configFile"
   Write-Host 'Fully restart SillyTavern. The startup log should contain: [SRL Bridge] Short-lived device relay loaded'
+} catch {
+  if (-not $installCompleted -and $backupPath -and (Test-Path -LiteralPath $backupPath)) {
+    if (Test-Path -LiteralPath $targetPath) {
+      Remove-Item -LiteralPath $targetPath -Recurse -Force
+    }
+    Move-Item -LiteralPath $backupPath -Destination $targetPath
+    Write-Warning "Install failed; the previous server plugin was restored to: $targetPath"
+  }
+  throw
 } finally {
   if (Test-Path -LiteralPath $tempRoot) {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force
