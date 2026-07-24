@@ -128,3 +128,4 @@
 - 用户确认希望中继窗口消失后仍能保持约半小时连接；如果中继窗口保留，则连接应持续可用。
 - 实际处理：服务端插件新增 active session lastSeen 保活，poll 与 messages 都会刷新活跃时间；中继页关闭不再调用 close；新版中继页会把 participant token 与 relayBase 交给原 SRL 页面，原页面直接轮询酒馆插件。
 - 兼容策略：旧浏览器/旧插件仍保留 MessageChannel 交接作为兜底；新版下载包升级到 0.3.11。
+- 2026-07-25：发布 0.3.12。设备码中继页“返回原来的资源库”增加失败兜底：先尝试 focus 原 SRL 标签页并重新发送邀请，1 秒内未建立 MessageChannel 时，当前中继页会跳回 SRL 并携带短期 relayToken，让资源库直接接管 HTTP 中继。

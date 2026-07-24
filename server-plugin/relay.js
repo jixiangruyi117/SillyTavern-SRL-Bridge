@@ -11,6 +11,16 @@ function relayBaseUrl() {
   return new URL(config.relayBase || '/api/plugins/srl-bridge/', window.location.origin).href
 }
 
+function srlResumeUrl() {
+  const target = new URL(config.srlUrl)
+  target.searchParams.set('srlBridge', `relay-${config.code}`)
+  target.searchParams.set('pair', config.pairCode)
+  target.searchParams.set('stOrigin', window.location.origin)
+  target.searchParams.set('relayBase', relayBaseUrl())
+  target.searchParams.set('relayToken', config.token)
+  return target.href
+}
+
 function bytesToBase64(buffer) {
   const bytes = new Uint8Array(buffer)
   let binary = ''
@@ -115,11 +125,15 @@ function invitation() {
 
 focusButton.addEventListener('click', () => {
   if (host && !host.closed) {
+    invitation()
     host.focus()
     status.textContent = '已请求切回原来的资源库。若浏览器没有自动切换，请手动回到原 SRL 标签页。'
+    window.setTimeout(() => {
+      if (!port && !stopped) window.location.href = srlResumeUrl()
+    }, 1000)
     return
   }
-  window.location.href = config.srlUrl
+  window.location.href = srlResumeUrl()
 })
 
 if (!host) {
