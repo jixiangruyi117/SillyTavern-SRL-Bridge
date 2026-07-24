@@ -153,7 +153,7 @@ export class BridgeController extends EventTarget {
           items: await this.adapter.listResources(),
         })
       } else if (message.type === 'pull-request') {
-        await this.sendResources(message.requestId, message.items ?? [])
+        this.runLongOperation(message, () => this.sendResources(message.requestId, message.items ?? []))
       } else if (message.type === 'file-start') {
         this.startIncoming(message)
       } else if (message.type === 'file-chunk') {
@@ -180,6 +180,22 @@ export class BridgeController extends EventTarget {
       } catch {}
       this.emitLog(text, 'error')
     }
+  }
+
+  runLongOperation(message, task) {
+    Promise.resolve()
+      .then(task)
+      .catch(async (error) => {
+        const text = error instanceof Error ? error.message : '酒馆桥接操作失败'
+        try {
+          await this.send('operation-error', {
+            requestId: message.requestId,
+            transferId: message.transferId,
+            error: text,
+          })
+        } catch {}
+        this.emitLog(text, 'error')
+      })
   }
 
   async sendResources(requestId, items) {
