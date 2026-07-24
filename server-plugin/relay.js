@@ -128,9 +128,6 @@ focusButton.addEventListener('click', () => {
     invitation()
     host.focus()
     status.textContent = '已请求切回原来的资源库。若浏览器没有自动切换，请手动回到原 SRL 标签页。'
-    window.setTimeout(() => {
-      if (!port && !stopped) window.location.href = srlResumeUrl()
-    }, 1000)
     return
   }
   window.location.href = srlResumeUrl()
