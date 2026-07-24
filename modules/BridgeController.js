@@ -192,13 +192,13 @@ export class BridgeController extends EventTarget {
       await this.sendFile(file, item.kind, requestId, item.name)
       completed += 1
     }
-    this.send('pull-complete', { requestId, completed })
+    await this.send('pull-complete', { requestId, completed })
   }
 
   async sendFile(file, kind, requestId, displayName) {
     if (file.size > MAX_FILE_SIZE) throw new Error(`${file.name} 超过单文件 256 MB 限制`)
     const transferId = createId('st-file')
-    this.send('file-start', {
+    await this.send('file-start', {
       requestId,
       transferId,
       direction: 'to-srl',
@@ -210,7 +210,7 @@ export class BridgeController extends EventTarget {
       sha256: await sha256(file),
     })
     await this.sendFileChunks(file, requestId, transferId)
-    this.send('file-end', { requestId, transferId })
+    await this.send('file-end', { requestId, transferId })
   }
 
   startIncoming(message) {
@@ -265,7 +265,7 @@ export class BridgeController extends EventTarget {
       const timer = setTimeout(() => {
         this.chunkAcks.delete(key)
         reject(new Error('文件分块确认超时'))
-      }, 30_000)
+      }, 90_000)
       this.chunkAcks.set(key, () => {
         clearTimeout(timer)
         resolve()
