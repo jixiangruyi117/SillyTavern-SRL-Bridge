@@ -1,9 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { BRIDGE_PROTOCOL, envelope, isBridgeEnvelope, safeFileName, uniqueName } from '../modules/Protocol.js'
+import {
+  BRIDGE_EXTENSION_VERSION,
+  BRIDGE_PROTOCOL,
+  envelope,
+  isBridgeEnvelope,
+  safeFileName,
+  uniqueName,
+} from '../modules/Protocol.js'
 
 test('creates and validates versioned bridge envelopes', () => {
+  assert.equal(BRIDGE_EXTENSION_VERSION, '0.3.16')
   const message = envelope('ping', { value: 1 })
   assert.equal(message.protocol, BRIDGE_PROTOCOL)
   assert.equal(isBridgeEnvelope(message), true)

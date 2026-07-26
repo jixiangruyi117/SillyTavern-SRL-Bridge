@@ -144,6 +144,29 @@ config = pattern.test(config)
 fs.writeFileSync(file, config);
 NODE
 
+EXTENSION_COUNT=0
+EXTENSION_UPDATED=0
+if [[ -d "$ST_PATH/data" ]]; then
+  while IFS= read -r -d '' manifest; do
+    EXTENSION_COUNT=$((EXTENSION_COUNT + 1))
+    extension_dir="$(dirname "$manifest")"
+    if [[ -d "$extension_dir/.git" ]] && command -v git >/dev/null; then
+      if [[ -z "$(git -C "$extension_dir" status --porcelain 2>/dev/null)" ]] &&
+        git -C "$extension_dir" pull --ff-only; then
+        EXTENSION_UPDATED=$((EXTENSION_UPDATED + 1))
+        extension_version="$(node -e "const fs=require('node:fs'); const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); process.stdout.write(String(value.version||'unknown'))" "$manifest")"
+        echo "SUCCESS: SRL front-end extension updated to $extension_version: $extension_dir"
+      else
+        echo "WARNING: The front-end extension could not be updated automatically: $extension_dir" >&2
+        echo 'Open SillyTavern > Extensions > Manage extensions, then update SRL 酒馆资源库互传.' >&2
+      fi
+    else
+      echo "WARNING: An SRL front-end extension without Git update metadata was found: $extension_dir" >&2
+      echo 'Update it in SillyTavern extension manager or reinstall it from the Git repository URL.' >&2
+    fi
+  done < <(find "$ST_PATH/data" -type f -path '*/extensions/SillyTavern-SRL-Bridge/manifest.json' -print0 2>/dev/null)
+fi
+
 INSTALL_DONE=1
 if [[ -n "${BACKUP_PATH:-}" && -e "$BACKUP_PATH" ]]; then
   if [[ $KEEP_BACKUP -eq 1 ]]; then
@@ -156,7 +179,13 @@ fi
 
 echo ''
 echo 'SUCCESS: SRL server relay plugin has been installed.'
-echo 'Note: this is a server plugin under SillyTavern/plugins, not the front-end extension shown in the extension download page.'
+if [[ $EXTENSION_COUNT -eq 0 ]]; then
+  echo 'WARNING: The SRL front-end extension was not found.' >&2
+  echo 'Install it in SillyTavern with this Git URL:' >&2
+  echo 'https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge.git' >&2
+elif [[ $EXTENSION_UPDATED -ne $EXTENSION_COUNT ]]; then
+  echo 'WARNING: The server plugin is current, but at least one SRL front-end extension still needs a manual update.' >&2
+fi
 echo "SillyTavern root: $ST_PATH"
 echo "Plugin directory: $TARGET_PATH"
 echo "Config file: $CONFIG_PATH"

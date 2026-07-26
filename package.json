@@ -1,6 +1,6 @@
 {
   "name": "sillytavern-srl-bridge",
-  "version": "0.3.11",
+  "version": "0.3.16",
   "private": true,
   "type": "module",
   "scripts": {

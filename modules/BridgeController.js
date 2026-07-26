@@ -1,5 +1,6 @@
 import {
   BRIDGE_PROTOCOL,
+  BRIDGE_EXTENSION_VERSION,
   BRIDGE_VERSION,
   CHUNK_SIZE,
   DEFAULT_IN_FLIGHT_CHUNKS,
@@ -119,6 +120,7 @@ export class BridgeController extends EventTarget {
           'quickReply',
           'theme',
         ],
+        bridgeVersion: BRIDGE_EXTENSION_VERSION,
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
       }),
       this.expectedSrlOrigin,
@@ -135,6 +137,7 @@ export class BridgeController extends EventTarget {
       } else if (message.type === 'srl-accept') {
         if (message.pairCode !== this.pairCode) throw new Error('配对码不一致')
         this.send('st-ready', {
+          bridgeVersion: BRIDGE_EXTENSION_VERSION,
           capabilities: [
             'character',
             'worldBook',
@@ -383,4 +386,4 @@ export class BridgeController extends EventTarget {
   }
 }
 
-export { BRIDGE_PROTOCOL, BRIDGE_VERSION }
+export { BRIDGE_EXTENSION_VERSION, BRIDGE_PROTOCOL, BRIDGE_VERSION }

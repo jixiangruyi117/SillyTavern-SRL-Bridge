@@ -158,6 +158,39 @@ try {
     Add-Content -LiteralPath $configFile -Value "`nenableServerPlugins: true" -Encoding utf8
   }
 
+  $extensionCount = 0
+  $extensionUpdated = 0
+  $dataRoot = Join-Path $stRoot 'data'
+  if (Test-Path -LiteralPath $dataRoot -PathType Container) {
+    $extensionManifests = @(
+      Get-ChildItem -LiteralPath $dataRoot -Recurse -File -Filter 'manifest.json' -ErrorAction SilentlyContinue |
+        Where-Object {
+          $_.Directory.Name -eq 'SillyTavern-SRL-Bridge' -and
+          $_.Directory.Parent.Name -eq 'extensions'
+        }
+    )
+    foreach ($manifest in $extensionManifests) {
+      $extensionCount += 1
+      $extensionPath = $manifest.Directory.FullName
+      $gitDirectory = Join-Path $extensionPath '.git'
+      $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+      if ((Test-Path -LiteralPath $gitDirectory -PathType Container) -and $gitCommand) {
+        $dirty = & git -C $extensionPath status --porcelain
+        if ($LASTEXITCODE -eq 0 -and -not $dirty) {
+          & git -C $extensionPath pull --ff-only
+          if ($LASTEXITCODE -eq 0) {
+            $extensionUpdated += 1
+            $extensionVersion = (Get-Content -LiteralPath $manifest.FullName -Raw -Encoding utf8 | ConvertFrom-Json).version
+            Write-Host "SUCCESS: SRL front-end extension updated to $extensionVersion`: $extensionPath" -ForegroundColor Green
+            continue
+          }
+        }
+      }
+      Write-Warning "The front-end extension could not be updated automatically: $extensionPath"
+      Write-Warning 'Open SillyTavern > Extensions > Manage extensions, then update SRL 酒馆资源库互传.'
+    }
+  }
+
   $installCompleted = $true
   if ($backupPath -and (Test-Path -LiteralPath $backupPath)) {
     if ($KeepBackup) {
@@ -170,7 +203,13 @@ try {
 
   Write-Host ''
   Write-Host 'SUCCESS: SRL server relay plugin has been installed.' -ForegroundColor Green
-  Write-Host 'Note: this is a server plugin under SillyTavern/plugins, not the front-end extension shown in the extension download page.'
+  if ($extensionCount -eq 0) {
+    Write-Warning 'The SRL front-end extension was not found.'
+    Write-Warning 'Install it in SillyTavern with this Git URL:'
+    Write-Warning 'https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge.git'
+  } elseif ($extensionUpdated -ne $extensionCount) {
+    Write-Warning 'The server plugin is current, but at least one SRL front-end extension still needs a manual update.'
+  }
   Write-Host "SillyTavern root: $stRoot"
   Write-Host "Plugin directory: $targetPath"
   Write-Host "Config file: $configFile"
