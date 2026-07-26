@@ -1,5 +1,12 @@
 # 更新记录
 
+## 0.3.18
+
+- 新增酒馆助手脚本互传：全局（extension_settings.tavern_helper.script.scripts）、角色卡（data.extensions.tavern_helper.scripts）、预设（extensions.tavern_helper.scripts）三个作用域，兼容旧键 TavernHelper / TavernHelper_scripts。
+- 导出保持原始 ScriptTree 结构（脚本/文件夹）；导入时统一换新 id 并整树停用，绝不落地即运行，需在酒馆助手中手动启用。
+- 导入合并保留同域其他字段（variables 等），冲突策略沿用副本/跳过/覆盖。
+- 新增 HelperScripts 单元测试 6 项。
+
 ## 0.3.17 - 2026-07-26
 
 - 移动端设备码改用 SRL 云服务器的 HTTPS 内存中继，不再依赖弹窗、中继页返回、`window.opener` 或同浏览器标签页身份。

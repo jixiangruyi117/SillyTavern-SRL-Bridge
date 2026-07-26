@@ -1,6 +1,6 @@
 export const BRIDGE_PROTOCOL = 'srl-tavern-bridge'
 export const BRIDGE_VERSION = 2
-export const BRIDGE_EXTENSION_VERSION = '0.3.17'
+export const BRIDGE_EXTENSION_VERSION = '0.3.18'
 export const CHUNK_SIZE = 256 * 1024
 export const MIN_IN_FLIGHT_CHUNKS = 2
 export const DEFAULT_IN_FLIGHT_CHUNKS = 4
@@ -16,6 +16,9 @@ export const RESOURCE_KINDS = Object.freeze({
   REGEX_PRESET: 'regexPreset',
   QUICK_REPLY: 'quickReply',
   THEME: 'theme',
+  SCRIPT_GLOBAL: 'scriptGlobal',
+  SCRIPT_CHARACTER: 'scriptCharacter',
+  SCRIPT_PRESET: 'scriptPreset',
 })
 
 export function createId(prefix = 'message') {
