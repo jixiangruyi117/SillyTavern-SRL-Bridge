@@ -11,6 +11,11 @@ import {
   envelope,
   isBridgeEnvelope,
   sha256,
+  COMPRESSIBLE_KINDS,
+  COMPRESS_MIN_BYTES,
+  supportsGzip,
+  gzipBlob,
+  gunzipBlob,
 } from './Protocol.js'
 import { RelayPort } from './RelayPort.js'
 
@@ -160,6 +165,9 @@ export class BridgeController extends EventTarget {
         this.emitState('pairing', '另一浏览器已加入，请核对六位确认码')
       } else if (message.type === 'srl-accept') {
         if (message.pairCode !== this.pairCode) throw new Error('配对码不一致')
+        this.srlCapabilities = Array.isArray(message.capabilities)
+          ? message.capabilities.filter((value) => typeof value === 'string')
+          : []
         this.send('st-ready', {
           bridgeVersion: BRIDGE_EXTENSION_VERSION,
           capabilities: [
@@ -171,6 +179,10 @@ export class BridgeController extends EventTarget {
             'regexPreset',
             'quickReply',
             'theme',
+            'scriptGlobal',
+            'scriptCharacter',
+            'scriptPreset',
+            ...(supportsGzip() ? ['gzip'] : []),
           ],
         })
         this.emitState('connected', '已连接 SRL')
@@ -241,6 +253,13 @@ export class BridgeController extends EventTarget {
   async sendFile(file, kind, requestId, displayName) {
     if (file.size > MAX_FILE_SIZE) throw new Error(`${file.name} 超过单文件 256 MB 限制`)
     const transferId = createId('st-file')
+    const useGzip =
+      Array.isArray(this.srlCapabilities) &&
+      this.srlCapabilities.includes('gzip') &&
+      supportsGzip() &&
+      COMPRESSIBLE_KINDS.includes(kind) &&
+      file.size > COMPRESS_MIN_BYTES
+    const payload = useGzip ? await gzipBlob(file) : file
     await this.send('file-start', {
       requestId,
       transferId,
@@ -249,10 +268,11 @@ export class BridgeController extends EventTarget {
       displayName,
       mimeType: file.type,
       kind,
-      size: file.size,
-      sha256: await sha256(file),
+      size: payload.size,
+      sha256: await sha256(payload),
+      ...(useGzip ? { contentEncoding: 'gzip', rawSize: file.size } : {}),
     })
-    await this.sendFileChunks(file, requestId, transferId)
+    await this.sendFileChunks(payload, requestId, transferId)
     await this.send('file-end', { requestId, transferId })
   }
 
@@ -285,7 +305,15 @@ export class BridgeController extends EventTarget {
     if (blob.size !== transfer.meta.size || (await sha256(blob)) !== transfer.meta.sha256) {
       throw new Error(`${transfer.meta.name} 完整性校验失败`)
     }
-    const file = new File([blob], transfer.meta.name, {
+    let content = blob
+    if (transfer.meta.contentEncoding === 'gzip') {
+      content = await gunzipBlob(blob)
+      const rawSize = Number(transfer.meta.rawSize)
+      if (Number.isFinite(rawSize) && rawSize > 0 && content.size !== rawSize) {
+        throw new Error(`${transfer.meta.name} 解压后大小与声明不符`)
+      }
+    }
+    const file = new File([content], transfer.meta.name, {
       type: transfer.meta.mimeType,
     })
     const result = await this.adapter.importResource(

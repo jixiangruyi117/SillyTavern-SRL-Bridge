@@ -44,6 +44,32 @@ export function envelope(type, payload = {}) {
   }
 }
 
+export const COMPRESSIBLE_KINDS = Object.freeze([
+  'worldBook',
+  'preset',
+  'regexGlobal',
+  'regexCharacter',
+  'regexPreset',
+  'quickReply',
+  'theme',
+  'scriptGlobal',
+  'scriptCharacter',
+  'scriptPreset',
+])
+export const COMPRESS_MIN_BYTES = 4096
+
+export function supportsGzip() {
+  return typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined'
+}
+
+export async function gzipBlob(blob) {
+  return new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob()
+}
+
+export async function gunzipBlob(blob) {
+  return new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).blob()
+}
+
 export async function sha256(blob) {
   const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('')
