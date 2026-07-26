@@ -130,6 +130,12 @@ async function initialize() {
   document
     .getElementById('srl-bridge-disconnect')
     .addEventListener('click', () => controller.disconnect())
+
+  // 浏览器名标签依赖上面注入的 settings.html，必须在注入完成后再写入
+  const browserName = currentBrowserName()
+  document.getElementById('srl-bridge-browser-name').textContent =
+    `${browserName} · 酒馆与 SRL 必须位于同一浏览器配置中`
+  document.getElementById('srl-bridge-connect-label').textContent = `在 ${browserName} 打开并配对`
 }
 
 if (document.readyState === 'loading')
@@ -139,7 +145,3 @@ else void initialize()
 window.addEventListener('pagehide', () => controller?.destroy(), {
   once: true,
 })
-const browserName = currentBrowserName()
-document.getElementById('srl-bridge-browser-name').textContent =
-  `${browserName} · 酒馆与 SRL 必须位于同一浏览器配置中`
-document.getElementById('srl-bridge-connect-label').textContent = `在 ${browserName} 打开并配对`

@@ -1,6 +1,6 @@
 export const BRIDGE_PROTOCOL = 'srl-tavern-bridge'
 export const BRIDGE_VERSION = 2
-export const BRIDGE_EXTENSION_VERSION = '0.3.18'
+export const BRIDGE_EXTENSION_VERSION = '0.3.19'
 export const CHUNK_SIZE = 256 * 1024
 export const MIN_IN_FLIGHT_CHUNKS = 2
 export const DEFAULT_IN_FLIGHT_CHUNKS = 4
