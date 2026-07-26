@@ -1,5 +1,7 @@
 # SRL 酒馆资源库互传
 
+> 0.3.17 移动端设备码改为连接 SRL 所在的 HTTPS 内存中继。酒馆页与原资源库页直接通过同一 HTTPS 会话交换分块，不再要求打开或保留中继窗口，也不再依赖 Android 标签页之间的 `window.opener`。资源内容只短暂存在限额内存队列，不写入服务器磁盘；等待连接 2 分钟过期，任一端离线约 30 分钟后清理。旧的本机服务端中继仅作为未部署新版 SRL 服务端时的兼容回退。
+
 这是 [SillyTavern](https://github.com/SillyTavern/SillyTavern) 与 SRL 酒馆资源库之间的双向资源桥。它是第三方扩展，不是 SillyTavern 官方组件。
 
 页面扩展适配 SillyTavern 1.18.x；桌面端和移动端使用同一套响应式界面。

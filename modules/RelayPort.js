@@ -35,9 +35,11 @@ function decode(value) {
 }
 
 export class RelayPort {
-  constructor(context, session) {
+  constructor(context, session, relayBase = '/api/plugins/srl-bridge/') {
     this.context = context
     this.session = session
+    this.relayBase = new URL(relayBase, window.location.origin).href
+    this.remote = new URL(this.relayBase).origin !== window.location.origin
     this.onmessage = null
     this.closed = false
     this.sendChain = Promise.resolve()
@@ -76,11 +78,14 @@ export class RelayPort {
   }
 
   async request(path, body) {
-    const response = await fetch(`/api/plugins/srl-bridge/${path}`, {
+    const response = await fetch(new URL(path, this.relayBase), {
       method: 'POST',
-      headers: this.context.getRequestHeaders(),
+      headers: this.remote
+        ? { 'Content-Type': 'application/json' }
+        : this.context.getRequestHeaders(),
       body: JSON.stringify(body),
       cache: 'no-store',
+      mode: this.remote ? 'cors' : 'same-origin',
     })
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}))

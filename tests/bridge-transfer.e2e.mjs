@@ -67,20 +67,14 @@ try {
     .nth(1)
     .evaluate((node) => node.click())
   await srl.locator('.feature-app--bridge').click()
-  await srl.locator('.tavern-device-join input[type="url"]').fill(
-    process.env.ST_URL || 'http://127.0.0.1:8000',
-  )
   await srl.locator('.tavern-device-join__code').fill(code)
-  const relayPopupPromise = srl.waitForEvent('popup')
   await srl.locator('.tavern-device-join button').click()
-  const relay = await relayPopupPromise
-  await relay.waitForLoadState('domcontentloaded')
   await srl.locator('.tavern-bridge-pairing code').waitFor({ timeout: 30_000 })
   try {
     await srl.locator('.tavern-bridge-pairing > button').click({ timeout: 20_000 })
   } catch (error) {
     throw new Error(
-      `Pairing confirmation is unavailable.\nSRL: ${await srl.locator('body').innerText()}\nRelay: ${await relay.locator('body').innerText()}\n${error}`,
+      `Pairing confirmation is unavailable.\nSRL: ${await srl.locator('body').innerText()}\n${error}`,
     )
   }
   try {

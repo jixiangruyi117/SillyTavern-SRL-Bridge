@@ -56,21 +56,45 @@ export class BridgeController extends EventTarget {
     if (!['http:', 'https:'].includes(target.protocol))
       throw new Error('SRL 地址必须使用 HTTP 或 HTTPS')
     this.disconnect('正在建立设备码连接')
-    const response = await fetch('/api/plugins/srl-bridge/sessions', {
-      method: 'POST',
-      headers: this.adapter.context.getRequestHeaders(),
-      body: JSON.stringify({ srlUrl: target.href }),
-      cache: 'no-store',
-    })
-    if (!response.ok) {
-      if (response.status === 404) throw new Error('设备码服务尚未安装或酒馆尚未重启')
-      throw new Error(`创建设备码失败（HTTP ${response.status}）`)
+    let session
+    let relayBase
+    const secureRelayBase = new URL('/api/bridge/', target.origin)
+    try {
+      const response = await fetch(new URL('sessions', secureRelayBase), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ srlUrl: target.href }),
+        cache: 'no-store',
+        mode: 'cors',
+      })
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}))
+        throw new Error(detail.error || `HTTPS 中继返回 HTTP ${response.status}`)
+      }
+      session = await response.json()
+      relayBase = new URL(session.relayBase || '/api/bridge/', target.origin).href
+    } catch (secureError) {
+      const response = await fetch('/api/plugins/srl-bridge/sessions', {
+        method: 'POST',
+        headers: this.adapter.context.getRequestHeaders(),
+        body: JSON.stringify({ srlUrl: target.href }),
+        cache: 'no-store',
+      })
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(
+            `HTTPS 中继不可用，且本机设备码服务尚未安装。${secureError instanceof Error ? ` 原因：${secureError.message}` : ''}`,
+          )
+        }
+        throw new Error(`创建设备码失败（HTTP ${response.status}）`)
+      }
+      session = await response.json()
+      relayBase = new URL('/api/plugins/srl-bridge/', window.location.origin).href
     }
-    const session = await response.json()
     this.deviceCode = session.code
     this.channel = `relay-${session.code}`
     this.pairCode = session.pairCode
-    this.port = new RelayPort(this.adapter.context, session)
+    this.port = new RelayPort(this.adapter.context, session, relayBase)
     this.port.onmessage = (event) => {
       this.messageChain = this.messageChain
         .then(() => this.handlePortMessage(event.data))
@@ -82,7 +106,7 @@ export class BridgeController extends EventTarget {
       this.emitState('idle', error instanceof Error ? error.message : '设备码中继已断开')
     }
     this.port.start()
-    this.emitState('waiting', '请在另一浏览器的 SRL 输入设备码')
+    this.emitState('waiting', '请在原来的 SRL 输入设备码；无需打开新窗口')
     return session
   }
 
