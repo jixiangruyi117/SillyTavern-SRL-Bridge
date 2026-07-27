@@ -321,6 +321,124 @@ export async function init(router) {
   cleanupTimer = setInterval(prune, 30_000)
   cleanupTimer.unref?.()
   console.log('[SRL Bridge] Short-lived device relay loaded')
+  initLanDirect(router)
+}
+
+/** 局域网直连 HTTP 上传端点，旁路设备码中继队列。
+ * SRL APK 通过 CapacitorHttp 直连酒馆局域网地址（如 http://192.168.1.x:8000），
+ * 不分块不排队不限流，实际速度取决于内网带宽。
+ * 所有路径以 /api/plugins/srl-bridge/direct 为前缀，与 CF 中继互不干扰。 */
+function initLanDirect(router) {
+  const DIRECT_BASE = '/direct'
+  const DIRECT_TTL = 5 * 60 * 1000
+
+  const pendingDirect = new Map()
+  let directCleanup
+
+  function pruneDirect() {
+    const now = Date.now()
+    for (const [id, slot] of pendingDirect) {
+      if (slot.expiresAt <= now) {
+        for (const file of slot.files) {
+          try { fs.unlinkSync(file.path) } catch (_) { /* ignore */ }
+        }
+        pendingDirect.delete(id)
+      }
+    }
+  }
+
+  if (!directCleanup) {
+    directCleanup = setInterval(pruneDirect, 60_000)
+    directCleanup.unref?.()
+  }
+
+  const sessionToken = randomToken(16)
+
+  router.get(`${DIRECT_BASE}/handshake`, (_request, response) => {
+    response.json({
+      ok: true,
+      name: 'SRL Bridge LAN Direct v1',
+      sessionToken,
+      maxFileSize: 256 * 1024 * 1024,
+    })
+  })
+
+  router.post(`${DIRECT_BASE}/upload`, (request, response) => {
+    const token = request.headers?.['x-srl-direct-token']
+    if (!safeEqual(token, sessionToken)) {
+      return response.status(403).json({ error: '直连会话令牌无效' })
+    }
+
+    const uploadId = randomToken(8)
+    const tmpDir = fs.mkdtempSync('srl-direct-')
+    const fileName = String(request.headers?.['x-srl-file-name'] || `direct-${uploadId}`).replace(/[/\\:]/g, '_')
+    const chunks = []
+
+    request.on('data', (chunk) => chunks.push(chunk))
+    request.on('end', () => {
+      const buffer = Buffer.concat(chunks)
+      const tmpPath = `${tmpDir}/${fileName}`
+      try {
+        fs.writeFileSync(tmpPath, buffer)
+        const mime = request.headers?.['content-type'] || 'application/octet-stream'
+        if (!pendingDirect.has(uploadId)) {
+          pendingDirect.set(uploadId, { files: [], expiresAt: Date.now() + DIRECT_TTL })
+        }
+        pendingDirect.get(uploadId).files.push({ name: fileName, mime, path: tmpPath })
+        response.json({
+          uploadId,
+          fileName,
+          size: buffer.length,
+          sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+        })
+      } catch (error) {
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
+        response.status(500).json({ error: error?.message || '写入文件失败' })
+      }
+    })
+    request.on('error', () => {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
+    })
+  })
+
+  router.post(`${DIRECT_BASE}/commit`, (request, response) => {
+    const token = request.headers?.['x-srl-direct-token']
+    if (!safeEqual(token, sessionToken)) {
+      return response.status(403).json({ error: '直连会话令牌无效' })
+    }
+
+    const uploadId = String(request.body?.uploadId ?? '').trim()
+    const pending = pendingDirect.get(uploadId)
+    if (!pending || pending.expiresAt <= Date.now()) {
+      return response.status(404).json({ error: '上传批次不存在或已过期' })
+    }
+
+    const result = pending.files.map((file) => ({
+      name: file.name,
+      mime: file.mime,
+      path: file.path,
+      size: fs.statSync(file.path)?.size ?? 0,
+    }))
+    pendingDirect.delete(uploadId)
+    response.json({ migrated: result.length, files: result })
+  })
+
+  router.post(`${DIRECT_BASE}/cleanup`, (request, response) => {
+    const token = request.headers?.['x-srl-direct-token']
+    if (!safeEqual(token, sessionToken)) {
+      return response.status(403).json({ error: '直连会话令牌无效' })
+    }
+
+    const uploadId = String(request.body?.uploadId ?? '').trim()
+    const pending = pendingDirect.get(uploadId)
+    if (pending) {
+      for (const file of pending.files) {
+        try { fs.unlinkSync(file.path) } catch (_) {}
+      }
+      pendingDirect.delete(uploadId)
+    }
+    response.sendStatus(204)
+  })
 }
 
 export async function exit() {
