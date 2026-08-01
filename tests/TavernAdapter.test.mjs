@@ -9,6 +9,7 @@ function installContext(overrides = {}) {
     getWorldInfoNames: () => ['测试世界书'],
     getRequestHeaders: () => ({ 'X-CSRF-Token': 'test' }),
     extensionSettings: { regex: [] },
+    powerUserSettings: { personas: {}, persona_descriptions: {} },
     saveSettingsDebounced: () => {},
     updateWorldInfoList: async () => {},
     getPresetManager: async () => ({
@@ -60,6 +61,38 @@ test('imports a world book through the official endpoint and refreshes the list'
   assert.equal(request.options.body instanceof FormData, true)
   assert.equal(refreshed, true)
   assert.deepEqual(result, { status: 'overwritten', name: '同名世界书' })
+})
+
+test('uploads a persona avatar through the official avatar endpoint then writes persona fields to powerUserSettings', async () => {
+  let request
+  const context = installContext({
+    powerUserSettings: { personas: {}, persona_descriptions: {}, default_persona: null },
+  })
+  globalThis.fetch = async (url, options) => {
+    request = { url, options }
+    return new Response('{}', { status: 200 })
+  }
+  const adapter = new TavernAdapter()
+  const avatar = new File(['png'], 'alice.png', { type: 'image/png' })
+  await adapter.importResource(avatar, 'userAvatar', 'overwrite', { targetName: 'alice.png' })
+  assert.equal(request.url, '/api/avatars/upload')
+  assert.equal(request.options.body instanceof FormData, true)
+
+  const persona = new File(
+    [
+      JSON.stringify({
+        personas: { 'alice.png': 'Alice' },
+        persona_descriptions: { 'alice.png': { description: 'Archivist', position: 0 } },
+        default_persona: 'alice.png',
+      }),
+    ],
+    'personas.json',
+    { type: 'application/json' },
+  )
+  await adapter.importResource(persona, 'userPersona', 'overwrite')
+  assert.equal(context.powerUserSettings.personas['alice.png'], 'Alice')
+  assert.equal(context.powerUserSettings.persona_descriptions['alice.png'].description, 'Archivist')
+  assert.equal(context.powerUserSettings.default_persona, 'alice.png')
 })
 
 test('creates a conflict-safe preset copy without replacing the original', async () => {

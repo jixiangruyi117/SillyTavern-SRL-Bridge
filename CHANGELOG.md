@@ -1,5 +1,11 @@
 # 更新记录
 
+## 0.3.20 - 2026-08-01
+
+- 新增 `userPersona` 与 `userAvatar` 互传类型。人设 JSON 使用酒馆 `powerUserSettings.personas`、`persona_descriptions` 与 `default_persona` 的原生结构导入。
+- 用户头像通过官方 `/api/avatars/upload` 上传；人设导入在头像完成后写入设置并调用 `saveSettingsDebounced()`。
+- 用户人设不支持“副本”冲突策略，避免复制 JSON 后与头像文件名不一致；跳过和覆盖仍按明确结果返回。
+
 ## 0.3.18
 
 - 新增酒馆助手脚本互传：全局（extension_settings.tavern_helper.script.scripts）、角色卡（data.extensions.tavern_helper.scripts）、预设（extensions.tavern_helper.scripts）三个作用域，兼容旧键 TavernHelper / TavernHelper_scripts。

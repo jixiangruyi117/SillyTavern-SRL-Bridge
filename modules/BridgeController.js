@@ -148,6 +148,8 @@ export class BridgeController extends EventTarget {
           'regexPreset',
           'quickReply',
           'theme',
+          'userPersona',
+          'userAvatar',
         ],
         bridgeVersion: BRIDGE_EXTENSION_VERSION,
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
@@ -182,6 +184,8 @@ export class BridgeController extends EventTarget {
             'scriptGlobal',
             'scriptCharacter',
             'scriptPreset',
+            'userPersona',
+            'userAvatar',
             ...(supportsGzip() ? ['gzip'] : []),
           ],
         })

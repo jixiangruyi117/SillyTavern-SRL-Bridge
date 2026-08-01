@@ -376,6 +376,8 @@ export class TavernAdapter {
     if (kind === RESOURCE_KINDS.SCRIPT_PRESET) {
       return this.importPresetScript(file, conflictPolicy, metadata.targetName)
     }
+    if (kind === RESOURCE_KINDS.USER_AVATAR) return this.importUserAvatar(file, metadata.targetName)
+    if (kind === RESOURCE_KINDS.USER_PERSONA) return this.importUserPersona(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.THEME) return this.importTheme(file, conflictPolicy)
     throw new Error('酒馆端暂不支持这种资源类型')
   }
@@ -413,6 +415,68 @@ export class TavernAdapter {
       status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
       name: result.file_name,
     }
+  }
+
+  async importUserAvatar(file, targetName) {
+    const context = this.context
+    const avatarId = safeFileName(targetName || file.name, 'persona.png')
+    if (!/\.png$/i.test(avatarId)) throw new Error('用户头像必须使用 PNG 文件名')
+    const form = new FormData()
+    form.append('avatar', file, avatarId)
+    form.append('overwrite_name', avatarId)
+    await assertResponse(
+      await fetch('/api/avatars/upload', {
+        method: 'POST',
+        headers: context.getRequestHeaders({ omitContentType: true }),
+        body: form,
+        cache: 'no-cache',
+      }),
+      '上传用户头像',
+    )
+    return { status: 'created', name: avatarId }
+  }
+
+  async importUserPersona(file, conflictPolicy) {
+    const context = this.context
+    const parsed = JSON.parse(await file.text())
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed) ||
+      !parsed.personas ||
+      typeof parsed.personas !== 'object' ||
+      !parsed.persona_descriptions ||
+      typeof parsed.persona_descriptions !== 'object'
+    ) {
+      throw new Error('用户人设 JSON 缺少 personas 或 persona_descriptions')
+    }
+    const powerUser = context.powerUserSettings
+    if (!powerUser || typeof powerUser !== 'object') throw new Error('当前酒馆未公开 powerUserSettings')
+    powerUser.personas ||= {}
+    powerUser.persona_descriptions ||= {}
+    let applied = 0
+    for (const [avatarId, name] of Object.entries(parsed.personas)) {
+      if (typeof name !== 'string' || !avatarId) continue
+      const exists = Object.prototype.hasOwnProperty.call(powerUser.personas, avatarId)
+      if (exists && conflictPolicy === 'skip') continue
+      if (exists && conflictPolicy === 'copy') {
+        throw new Error('用户人设直传暂不支持“保留两份”；请改用覆盖或跳过，避免头像键与图片错配')
+      }
+      powerUser.personas[avatarId] = name
+      powerUser.persona_descriptions[avatarId] = structuredClone(
+        parsed.persona_descriptions[avatarId] || {},
+      )
+      applied += 1
+    }
+    if (!applied) return { status: 'skipped', name: file.name }
+    if (
+      typeof parsed.default_persona === 'string' &&
+      Object.prototype.hasOwnProperty.call(powerUser.personas, parsed.default_persona)
+    ) {
+      powerUser.default_persona = parsed.default_persona
+    }
+    context.saveSettingsDebounced()
+    return { status: 'created', name: `${applied} 个人设` }
   }
 
   async importWorldBook(file, conflictPolicy) {
