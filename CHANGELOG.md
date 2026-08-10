@@ -2,6 +2,7 @@
 
 ## 0.3.20 - 2026-08-01
 
+- 发布打包脚本的默认版本同步为 `0.3.20`，避免未显式传入版本时生成与扩展元数据不一致的 0.3.19 ZIP 文件名。
 - 新增 `userPersona` 与 `userAvatar` 互传类型。人设 JSON 使用酒馆 `powerUserSettings.personas`、`persona_descriptions` 与 `default_persona` 的原生结构导入。
 - 用户头像通过官方 `/api/avatars/upload` 上传；人设导入在头像完成后写入设置并调用 `saveSettingsDebounced()`。
 - 用户人设不支持“副本”冲突策略，避免复制 JSON 后与头像文件名不一致；跳过和覆盖仍按明确结果返回。
