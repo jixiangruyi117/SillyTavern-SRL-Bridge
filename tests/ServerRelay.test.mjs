@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { Readable } from 'node:stream'
 
 import { exit, init } from '../server-plugin/index.mjs'
 
@@ -42,6 +43,12 @@ test('allows a second browser to join with the short-lived device code', async (
     },
     post(path, handler) {
       routes.set(`POST ${path}`, handler)
+    },
+    put(path, handler) {
+      routes.set(`PUT ${path}`, handler)
+    },
+    delete(path, handler) {
+      routes.set(`DELETE ${path}`, handler)
     },
   }
   await init(router)
@@ -88,6 +95,12 @@ test('allows joining with only the device code', async () => {
     post(path, handler) {
       routes.set(`POST ${path}`, handler)
     },
+    put(path, handler) {
+      routes.set(`PUT ${path}`, handler)
+    },
+    delete(path, handler) {
+      routes.set(`DELETE ${path}`, handler)
+    },
   }
   await init(router)
   try {
@@ -106,6 +119,61 @@ test('allows joining with only the device code', async () => {
     )
     assert.equal(joined.statusCode, 200)
     assert.match(joined.body, /__SRL_RELAY__/u)
+  } finally {
+    await exit()
+  }
+})
+
+test('creates a short-lived local direct session and requires its bearer token', async () => {
+  const routes = new Map()
+  const router = {
+    get(path, handler) { routes.set(`GET ${path}`, handler) },
+    post(path, handler) { routes.set(`POST ${path}`, handler) },
+    put(path, handler) { routes.set(`PUT ${path}`, handler) },
+    delete(path, handler) { routes.set(`DELETE ${path}`, handler) },
+  }
+  await init(router)
+  try {
+    const created = responseRecorder()
+    routes.get('POST /direct/sessions')({}, created)
+    assert.match(created.body.sessionId, /^[A-Za-z0-9_-]{12,}$/u)
+    assert.match(created.body.token, /^[A-Za-z0-9_-]{32,}$/u)
+
+    const denied = responseRecorder()
+    routes.get('PUT /direct/sessions/:sessionId')(
+      Object.assign(Readable.from([Buffer.from('blocked')]), {
+        params: { sessionId: created.body.sessionId },
+        headers: { 'content-length': '7' },
+      }),
+      denied,
+    )
+    assert.equal(denied.statusCode, 403)
+
+    let resolveUpload
+    const uploadedDone = new Promise((resolve) => {
+      resolveUpload = resolve
+    })
+    const uploaded = responseRecorder()
+    const uploadJson = uploaded.json.bind(uploaded)
+    uploaded.json = (value) => {
+      uploadJson(value)
+      resolveUpload()
+      return uploaded
+    }
+    const request = Object.assign(Readable.from([Buffer.from('local-data')]), {
+      params: { sessionId: created.body.sessionId },
+      headers: {
+        'content-length': '10',
+        'content-type': 'application/octet-stream',
+        'x-srl-direct-token': created.body.token,
+        'x-srl-file-name': 'safe.json',
+      },
+    })
+    routes.get('PUT /direct/sessions/:sessionId')(request, uploaded)
+    await uploadedDone
+    assert.equal(uploaded.body.ok, true)
+    assert.equal(uploaded.body.size, 10)
+    assert.match(uploaded.body.sha256, /^[a-f0-9]{64}$/u)
   } finally {
     await exit()
   }

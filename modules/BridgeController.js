@@ -186,6 +186,7 @@ export class BridgeController extends EventTarget {
             'scriptPreset',
             'userPersona',
             'userAvatar',
+            ...(this.canUseLocalDirect() ? ['local-direct-v1'] : []),
             ...(supportsGzip() ? ['gzip'] : []),
           ],
         })
@@ -196,9 +197,14 @@ export class BridgeController extends EventTarget {
           items: await this.adapter.listResources(),
         })
       } else if (message.type === 'pull-request') {
-        this.runLongOperation(message, () => this.sendResources(message.requestId, message.items ?? []))
+        this.runLongOperation(message, () =>
+          this.sendResources(message.requestId, message.items ?? [], message.localDirect === true),
+        )
+      } else if (message.type === 'local-direct-session-request') {
+        const session = await this.createLocalDirectSession()
+        await this.send('local-direct-session', { requestId: message.requestId, session })
       } else if (message.type === 'file-start') {
-        this.startIncoming(message)
+        await this.startIncoming(message)
       } else if (message.type === 'file-chunk') {
         this.receiveChunk(message)
         await this.send('file-chunk-ack', {
@@ -241,20 +247,20 @@ export class BridgeController extends EventTarget {
       })
   }
 
-  async sendResources(requestId, items) {
+  async sendResources(requestId, items, localDirect = false) {
     const listed = new Map((await this.adapter.listResources()).map((item) => [item.id, item]))
     let completed = 0
     for (const requested of items) {
       const item = listed.get(requested.id)
       if (!item) continue
       const file = await this.adapter.exportResource(item)
-      await this.sendFile(file, item.kind, requestId, item.name)
+      await this.sendFile(file, item.kind, requestId, item.name, localDirect)
       completed += 1
     }
     await this.send('pull-complete', { requestId, completed })
   }
 
-  async sendFile(file, kind, requestId, displayName) {
+  async sendFile(file, kind, requestId, displayName, localDirect = false) {
     if (file.size > MAX_FILE_SIZE) throw new Error(`${file.name} 超过单文件 256 MB 限制`)
     const transferId = createId('st-file')
     const useGzip =
@@ -264,6 +270,17 @@ export class BridgeController extends EventTarget {
       COMPRESSIBLE_KINDS.includes(kind) &&
       file.size > COMPRESS_MIN_BYTES
     const payload = useGzip ? await gzipBlob(file) : file
+    let directSession
+    if (localDirect) {
+      try {
+        directSession = await this.createLocalDirectSession()
+        await this.uploadLocalDirectFile(directSession, payload)
+      } catch (error) {
+        if (directSession) await this.removeLocalDirectFile(directSession)
+        directSession = undefined
+        this.emitLog(`本机直传不可用，已回退设备码传输：${file.name}`, 'warning')
+      }
+    }
     await this.send('file-start', {
       requestId,
       transferId,
@@ -274,15 +291,24 @@ export class BridgeController extends EventTarget {
       kind,
       size: payload.size,
       sha256: await sha256(payload),
+      ...(directSession ? { localDirectSession: directSession } : {}),
       ...(useGzip ? { contentEncoding: 'gzip', rawSize: file.size } : {}),
     })
-    await this.sendFileChunks(payload, requestId, transferId)
+    if (!directSession) await this.sendFileChunks(payload, requestId, transferId)
     await this.send('file-end', { requestId, transferId })
   }
 
-  startIncoming(message) {
+  async startIncoming(message) {
     if (message.direction !== 'to-tavern') return
     if (message.size > MAX_FILE_SIZE) throw new Error('单文件超过 256 MB 限制')
+    const directRequested = Object.hasOwn(message, 'localDirectSession')
+    const localDirectSession = this.readLocalDirectSession(message.localDirectSession)
+    if (directRequested && !localDirectSession) throw new Error('资源库发送了无效的本机直传会话')
+    if (localDirectSession) {
+      const file = await this.downloadLocalDirectFile(localDirectSession, message.name, message.mimeType)
+      this.incoming.set(message.transferId, { meta: message, chunks: [], received: file.size, file, localDirectSession })
+      return
+    }
     this.incoming.set(message.transferId, {
       meta: message,
       chunks: [],
@@ -305,7 +331,7 @@ export class BridgeController extends EventTarget {
     const transfer = this.incoming.get(message.transferId)
     if (!transfer) return
     this.incoming.delete(message.transferId)
-    const blob = new Blob(transfer.chunks, { type: transfer.meta.mimeType })
+    const blob = transfer.file ?? new Blob(transfer.chunks, { type: transfer.meta.mimeType })
     if (blob.size !== transfer.meta.size || (await sha256(blob)) !== transfer.meta.sha256) {
       throw new Error(`${transfer.meta.name} 完整性校验失败`)
     }
@@ -326,12 +352,94 @@ export class BridgeController extends EventTarget {
       transfer.meta.conflictPolicy,
       transfer.meta,
     )
+    if (transfer.localDirectSession) await this.removeLocalDirectFile(transfer.localDirectSession)
     await this.send('file-result', {
       requestId: message.requestId,
       transferId: message.transferId,
       result,
     })
     this.emitLog(`${file.name}：${result.status}`, 'success')
+  }
+
+  canUseLocalDirect() {
+    return window.location.origin === 'http://127.0.0.1:8000'
+  }
+
+  async createLocalDirectSession() {
+    if (!this.canUseLocalDirect()) throw new Error('本机直传只支持 127.0.0.1:8000 的酒馆')
+    const response = await fetch('/api/plugins/srl-bridge/direct/sessions', {
+      method: 'POST',
+      headers: this.adapter.context.getRequestHeaders(),
+      cache: 'no-store',
+    })
+    if (!response.ok) throw new Error(`创建本机直传会话失败（HTTP ${response.status}）`)
+    const value = await response.json()
+    const session = {
+      sessionId: typeof value?.sessionId === 'string' ? value.sessionId : '',
+      token: typeof value?.token === 'string' ? value.token : '',
+      origin: window.location.origin,
+      maxFileSize: Number(value?.maxFileSize),
+    }
+    if (
+      !/^[A-Za-z0-9_-]{12,}$/u.test(session.sessionId) ||
+      !/^[A-Za-z0-9_-]{32,}$/u.test(session.token) ||
+      !Number.isInteger(session.maxFileSize) ||
+      session.maxFileSize < 1 ||
+      session.maxFileSize > MAX_FILE_SIZE
+    ) {
+      throw new Error('本机直传会话返回无效')
+    }
+    return session
+  }
+
+  readLocalDirectSession(value) {
+    if (!value || typeof value !== 'object') return undefined
+    const session = value
+    if (
+      session.origin !== window.location.origin ||
+      !/^[A-Za-z0-9_-]{12,}$/u.test(String(session.sessionId ?? '')) ||
+      !/^[A-Za-z0-9_-]{32,}$/u.test(String(session.token ?? '')) ||
+      !Number.isInteger(session.maxFileSize) ||
+      session.maxFileSize < 1 ||
+      session.maxFileSize > MAX_FILE_SIZE
+    ) return undefined
+    return session
+  }
+
+  localDirectUrl(session) {
+    return `/api/plugins/srl-bridge/direct/sessions/${encodeURIComponent(session.sessionId)}`
+  }
+
+  async uploadLocalDirectFile(session, file) {
+    const response = await fetch(this.localDirectUrl(session), {
+      method: 'PUT',
+      headers: {
+        ...this.adapter.context.getRequestHeaders(),
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-SRL-Direct-Token': session.token,
+        'X-SRL-File-Name': file.name,
+      },
+      body: file,
+      cache: 'no-store',
+    })
+    if (!response.ok) throw new Error(`写入本机直传文件失败（HTTP ${response.status}）`)
+  }
+
+  async downloadLocalDirectFile(session, name, mimeType) {
+    const response = await fetch(this.localDirectUrl(session), {
+      headers: { ...this.adapter.context.getRequestHeaders(), 'X-SRL-Direct-Token': session.token },
+      cache: 'no-store',
+    })
+    if (!response.ok) throw new Error(`读取本机直传文件失败（HTTP ${response.status}）`)
+    return new File([await response.blob()], name, { type: mimeType || response.headers.get('content-type') || '' })
+  }
+
+  async removeLocalDirectFile(session) {
+    await fetch(this.localDirectUrl(session), {
+      method: 'DELETE',
+      headers: { ...this.adapter.context.getRequestHeaders(), 'X-SRL-Direct-Token': session.token },
+      cache: 'no-store',
+    }).catch(() => {})
   }
 
   sendChunkAndWait(payload) {

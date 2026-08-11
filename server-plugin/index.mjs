@@ -1,5 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 export const info = {
   id: 'srl-bridge',
@@ -14,6 +16,8 @@ const MAX_QUEUE_BYTES = 2 * 1024 * 1024
 const sessions = new Map()
 const attempts = new Map()
 let cleanupTimer
+let directCleanupTimer
+const directSessions = new Map()
 
 function randomToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString('base64url')
@@ -324,124 +328,147 @@ export async function init(router) {
   initLanDirect(router)
 }
 
-/** 局域网直连 HTTP 上传端点，旁路设备码中继队列。
- * SRL APK 通过 CapacitorHttp 直连酒馆局域网地址（如 http://192.168.1.x:8000），
- * 不分块不排队不限流，实际速度取决于内网带宽。
- * 所有路径以 /api/plugins/srl-bridge/direct 为前缀，与 CF 中继互不干扰。 */
+/**
+ * 局域网/本机直传临时文件端点。
+ *
+ * 设备码中继仍负责配对与控制消息；只有已配对的页面扩展才会创建会话并把随机
+ * bearer token 经受保护的桥接端口交给 SRL。原始字节不经过中继、Base64 或队列，
+ * 但服务端也不会把本机任意路径暴露给 APK。
+ */
 function initLanDirect(router) {
   const DIRECT_BASE = '/direct'
   const DIRECT_TTL = 5 * 60 * 1000
+  const DIRECT_MAX_FILE_SIZE = 256 * 1024 * 1024
 
-  const pendingDirect = new Map()
-  let directCleanup
+  const pendingDirect = directSessions
 
   function pruneDirect() {
     const now = Date.now()
     for (const [id, slot] of pendingDirect) {
       if (slot.expiresAt <= now) {
-        for (const file of slot.files) {
-          try { fs.unlinkSync(file.path) } catch (_) { /* ignore */ }
-        }
+        try { fs.rmSync(slot.tmpDir, { recursive: true, force: true }) } catch (_) { /* ignore */ }
         pendingDirect.delete(id)
       }
     }
   }
 
-  if (!directCleanup) {
-    directCleanup = setInterval(pruneDirect, 60_000)
-    directCleanup.unref?.()
+  if (!directCleanupTimer) {
+    directCleanupTimer = setInterval(pruneDirect, 60_000)
+    directCleanupTimer.unref?.()
   }
 
-  const sessionToken = randomToken(16)
+  function readSession(request, response) {
+    const sessionId = String(request.params?.sessionId ?? '').trim()
+    const session = pendingDirect.get(sessionId)
+    const token = request.headers?.['x-srl-direct-token']
+    if (!session || session.expiresAt <= Date.now() || !safeEqual(token, session.token)) {
+      response.status(403).json({ error: '本机直传会话无效或已过期' })
+      return undefined
+    }
+    return { sessionId, session }
+  }
 
-  router.get(`${DIRECT_BASE}/handshake`, (_request, response) => {
+  router.post(`${DIRECT_BASE}/sessions`, (_request, response) => {
+    const sessionId = randomToken(12)
+    const token = randomToken(32)
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'srl-direct-'))
+    const expiresAt = Date.now() + DIRECT_TTL
+    pendingDirect.set(sessionId, { token, tmpDir, expiresAt, file: undefined })
     response.json({
       ok: true,
-      name: 'SRL Bridge LAN Direct v1',
-      sessionToken,
-      maxFileSize: 256 * 1024 * 1024,
+      sessionId,
+      token,
+      expiresAt,
+      maxFileSize: DIRECT_MAX_FILE_SIZE,
     })
   })
 
-  router.post(`${DIRECT_BASE}/upload`, (request, response) => {
-    const token = request.headers?.['x-srl-direct-token']
-    if (!safeEqual(token, sessionToken)) {
-      return response.status(403).json({ error: '直连会话令牌无效' })
+  router.put(`${DIRECT_BASE}/sessions/:sessionId`, (request, response) => {
+    const found = readSession(request, response)
+    if (!found) return
+    const { session } = found
+    const declaredSize = Number(request.headers?.['content-length'] ?? 0)
+    if (Number.isFinite(declaredSize) && declaredSize > DIRECT_MAX_FILE_SIZE) {
+      return response.status(413).json({ error: '本机直传文件超过 256 MB 限制' })
     }
+    if (session.file) return response.status(409).json({ error: '本机直传会话已经写入文件' })
 
-    const uploadId = randomToken(8)
-    const tmpDir = fs.mkdtempSync('srl-direct-')
-    const fileName = String(request.headers?.['x-srl-file-name'] || `direct-${uploadId}`).replace(/[/\\:]/g, '_')
-    const chunks = []
-
-    request.on('data', (chunk) => chunks.push(chunk))
+    const fileName = String(request.headers?.['x-srl-file-name'] || 'direct-resource')
+      .replace(/[/\\:]/g, '_')
+      .slice(0, 240)
+    const path = `${session.tmpDir}/${fileName}`
+    const output = fs.createWriteStream(path, { flags: 'wx' })
+    const digest = crypto.createHash('sha256')
+    let size = 0
+    let failed = false
+    const fail = (status, error) => {
+      if (failed) return
+      failed = true
+      output.destroy()
+      try { fs.unlinkSync(path) } catch (_) { /* ignore */ }
+      response.status(status).json({ error })
+    }
+    request.on('data', (chunk) => {
+      size += chunk.length
+      if (size > DIRECT_MAX_FILE_SIZE) {
+        fail(413, '本机直传文件超过 256 MB 限制')
+        request.destroy()
+        return
+      }
+      digest.update(chunk)
+      if (!output.write(chunk)) {
+        request.pause()
+        output.once('drain', () => request.resume())
+      }
+    })
+    request.on('error', () => fail(400, '本机直传连接中断'))
+    output.on('error', () => fail(500, '本机直传临时文件写入失败'))
     request.on('end', () => {
-      const buffer = Buffer.concat(chunks)
-      const tmpPath = `${tmpDir}/${fileName}`
-      try {
-        fs.writeFileSync(tmpPath, buffer)
-        const mime = request.headers?.['content-type'] || 'application/octet-stream'
-        if (!pendingDirect.has(uploadId)) {
-          pendingDirect.set(uploadId, { files: [], expiresAt: Date.now() + DIRECT_TTL })
+      if (failed) return
+      output.end(() => {
+        if (failed) return
+        session.file = {
+          name: fileName,
+          mime: String(request.headers?.['content-type'] || 'application/octet-stream'),
+          path,
+          size,
+          sha256: digest.digest('hex'),
         }
-        pendingDirect.get(uploadId).files.push({ name: fileName, mime, path: tmpPath })
-        response.json({
-          uploadId,
-          fileName,
-          size: buffer.length,
-          sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
-        })
-      } catch (error) {
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
-        response.status(500).json({ error: error?.message || '写入文件失败' })
-      }
-    })
-    request.on('error', () => {
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
+        session.expiresAt = Date.now() + DIRECT_TTL
+        response.json({ ok: true, size, sha256: session.file.sha256 })
+      })
     })
   })
 
-  router.post(`${DIRECT_BASE}/commit`, (request, response) => {
-    const token = request.headers?.['x-srl-direct-token']
-    if (!safeEqual(token, sessionToken)) {
-      return response.status(403).json({ error: '直连会话令牌无效' })
+  router.get(`${DIRECT_BASE}/sessions/:sessionId`, (request, response) => {
+    const found = readSession(request, response)
+    if (!found) return
+    const { session } = found
+    if (!session.file || !fs.existsSync(session.file.path)) {
+      return response.status(404).json({ error: '本机直传文件尚未就绪' })
     }
-
-    const uploadId = String(request.body?.uploadId ?? '').trim()
-    const pending = pendingDirect.get(uploadId)
-    if (!pending || pending.expiresAt <= Date.now()) {
-      return response.status(404).json({ error: '上传批次不存在或已过期' })
-    }
-
-    const result = pending.files.map((file) => ({
-      name: file.name,
-      mime: file.mime,
-      path: file.path,
-      size: fs.statSync(file.path)?.size ?? 0,
-    }))
-    pendingDirect.delete(uploadId)
-    response.json({ migrated: result.length, files: result })
+    response.setHeader('Content-Type', session.file.mime)
+    response.setHeader('Content-Length', String(session.file.size))
+    response.setHeader('X-SRL-Direct-SHA256', session.file.sha256)
+    fs.createReadStream(session.file.path).on('error', () => response.destroy()).pipe(response)
   })
 
-  router.post(`${DIRECT_BASE}/cleanup`, (request, response) => {
-    const token = request.headers?.['x-srl-direct-token']
-    if (!safeEqual(token, sessionToken)) {
-      return response.status(403).json({ error: '直连会话令牌无效' })
-    }
-
-    const uploadId = String(request.body?.uploadId ?? '').trim()
-    const pending = pendingDirect.get(uploadId)
-    if (pending) {
-      for (const file of pending.files) {
-        try { fs.unlinkSync(file.path) } catch (_) {}
-      }
-      pendingDirect.delete(uploadId)
-    }
+  router.delete(`${DIRECT_BASE}/sessions/:sessionId`, (request, response) => {
+    const found = readSession(request, response)
+    if (!found) return
+    try { fs.rmSync(found.session.tmpDir, { recursive: true, force: true }) } catch (_) { /* ignore */ }
+    pendingDirect.delete(found.sessionId)
     response.sendStatus(204)
   })
 }
 
 export async function exit() {
   clearInterval(cleanupTimer)
+  clearInterval(directCleanupTimer)
+  directCleanupTimer = undefined
   for (const code of sessions.keys()) removeSession(code)
+  for (const session of directSessions.values()) {
+    try { fs.rmSync(session.tmpDir, { recursive: true, force: true }) } catch (_) { /* ignore */ }
+  }
+  directSessions.clear()
 }
