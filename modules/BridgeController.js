@@ -29,6 +29,10 @@ export class BridgeController extends EventTarget {
     this.pairCode = ''
     this.deviceCode = ''
     this.expectedSrlOrigin = ''
+    this.localAuto = false
+    this.localPairKey = ''
+    this.localPairTimer = undefined
+    this.localPairRequest = undefined
     this.incoming = new Map()
     this.chunkAcks = new Map()
     this.messageChain = Promise.resolve()
@@ -115,6 +119,95 @@ export class BridgeController extends EventTarget {
     return session
   }
 
+  localPairHeaders() {
+    return {
+      ...this.adapter.context.getRequestHeaders(),
+      'X-SRL-Local-Pair-Key': this.localPairKey,
+    }
+  }
+
+  async startLocalAutoPairing() {
+    if (!this.canUseLocalDirect()) return false
+    if (!this.localPairKey) this.localPairKey = crypto.randomUUID().replace(/-/g, '')
+    const response = await fetch('/api/plugins/srl-bridge/local-pair/register', {
+      method: 'POST',
+      headers: this.localPairHeaders(),
+      cache: 'no-store',
+    })
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}))
+      throw new Error(detail.error || `Unable to register local pairing (HTTP ${response.status})`)
+    }
+    if (!this.localPairTimer) {
+      this.localPairTimer = window.setInterval(() => void this.pollLocalPairRequest(), 1500)
+    }
+    await this.pollLocalPairRequest()
+    return true
+  }
+
+  async pollLocalPairRequest() {
+    if (!this.canUseLocalDirect() || this.localPairRequest || this.port) return
+    const response = await fetch('/api/plugins/srl-bridge/local-pair/requests', {
+      headers: this.localPairHeaders(),
+      cache: 'no-store',
+    })
+    if (response.status === 401) {
+      await this.startLocalAutoPairing()
+      return
+    }
+    if (!response.ok) return
+    const value = await response.json()
+    const request = Array.isArray(value?.requests) ? value.requests[0] : undefined
+    const code = typeof request?.code === 'string' ? request.code : ''
+    if (!/^[2-9A-HJ-NP-Z]{8}$/u.test(code)) return
+    this.localPairRequest = { code }
+    this.dispatchEvent(new CustomEvent('local-pair-request', { detail: this.localPairRequest }))
+  }
+
+  async approveLocalAutoPairing() {
+    const pending = this.localPairRequest
+    if (!pending) throw new Error('No local APK connection is waiting for approval')
+    const response = await fetch(
+      `/api/plugins/srl-bridge/local-pair/requests/${encodeURIComponent(pending.code)}/approve`,
+      { method: 'POST', headers: this.localPairHeaders(), cache: 'no-store' },
+    )
+    const value = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(value.error || `Unable to approve local pairing (HTTP ${response.status})`)
+    if (
+      !/^[2-9A-HJ-NP-Z]{8}$/u.test(String(value.code ?? '')) ||
+      !/^[A-Za-z0-9_-]{32,}$/u.test(String(value.controllerToken ?? ''))
+    ) {
+      throw new Error('The local pairing response is incomplete')
+    }
+    this.port?.close()
+    this.localAuto = true
+    this.localPairRequest = undefined
+    this.deviceCode = ''
+    this.pairCode = ''
+    this.channel = `local-${value.code}`
+    this.port = new RelayPort(this.adapter.context, {
+      code: value.code,
+      controllerToken: value.controllerToken,
+    }, value.relayBase || '/api/plugins/srl-bridge/')
+    this.port.onmessage = (event) => {
+      this.messageChain = this.messageChain
+        .then(() => this.handlePortMessage(event.data))
+        .catch((error) => this.emitLog(error instanceof Error ? error.message : 'Local relay message failed', 'error'))
+    }
+    this.port.onerror = (error) => {
+      this.emitState('idle', error instanceof Error ? error.message : 'The local relay disconnected')
+    }
+    this.port.start()
+    this.emitState('waiting', '已允许本机 APK 连接，正在完成握手')
+  }
+
+  stopLocalAutoPairing() {
+    if (this.localPairTimer) window.clearInterval(this.localPairTimer)
+    this.localPairTimer = undefined
+    this.localPairRequest = undefined
+    this.localPairKey = ''
+  }
+
   handleWindowMessage(event) {
     if (event.origin !== this.expectedSrlOrigin || event.source !== this.popup) return
     const message = event.data
@@ -164,6 +257,30 @@ export class BridgeController extends EventTarget {
     if (!isBridgeEnvelope(message)) return
     try {
       if (message.type === 'relay-joined') {
+        if (this.localAuto) {
+          this.send('st-ready', {
+            bridgeVersion: BRIDGE_EXTENSION_VERSION,
+            capabilities: [
+              'character',
+              'worldBook',
+              'preset',
+              'regexGlobal',
+              'regexCharacter',
+              'regexPreset',
+              'quickReply',
+              'theme',
+              'scriptGlobal',
+              'scriptCharacter',
+              'scriptPreset',
+              'userPersona',
+              'userAvatar',
+              'local-direct-v1',
+              ...(supportsGzip() ? ['gzip'] : []),
+            ],
+          })
+          this.emitState('connected', '已连接本机 APK；文件将直接在 127.0.0.1 上传输')
+          return
+        }
         this.emitState('pairing', '另一浏览器已加入，请核对六位确认码')
       } else if (message.type === 'srl-accept') {
         if (message.pairCode !== this.pairCode) throw new Error('配对码不一致')
@@ -520,6 +637,7 @@ export class BridgeController extends EventTarget {
       this.port.close()
     }
     this.port = null
+    this.localAuto = false
     if (this.popup && !this.popup.closed) this.popup.close()
     this.popup = null
     this.incoming.clear()
@@ -546,6 +664,7 @@ export class BridgeController extends EventTarget {
 
   destroy() {
     this.disconnect()
+    this.stopLocalAutoPairing()
     window.removeEventListener('message', this.handleWindowMessage)
   }
 }

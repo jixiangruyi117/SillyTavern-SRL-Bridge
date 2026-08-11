@@ -44,7 +44,8 @@ function setStatus(detail) {
   const code = document.getElementById('srl-bridge-code')
   const devicePanel = document.getElementById('srl-bridge-device-panel')
   const deviceCode = document.getElementById('srl-bridge-device-code')
-  if (!status || !headerStatus || !code || !devicePanel || !deviceCode) return
+  const localPairPanel = document.getElementById('srl-bridge-local-pair-panel')
+  if (!status || !headerStatus || !code || !devicePanel || !deviceCode || !localPairPanel) return
   status.dataset.status = detail.status
   headerStatus.dataset.status = detail.status
   const label =
@@ -62,6 +63,7 @@ function setStatus(detail) {
   code.textContent = detail.pairCode ? `配对码 ${detail.pairCode}` : ''
   devicePanel.hidden = !detail.deviceCode || detail.status === 'idle'
   deviceCode.textContent = detail.deviceCode || ''
+  if (detail.status === 'connected') localPairPanel.hidden = true
 }
 
 function appendLog(detail) {
@@ -84,6 +86,10 @@ async function initialize() {
   controller = new BridgeController(new TavernAdapter())
   controller.addEventListener('state', (event) => setStatus(event.detail))
   controller.addEventListener('log', (event) => appendLog(event.detail))
+  controller.addEventListener('local-pair-request', () => {
+    const panel = document.getElementById('srl-bridge-local-pair-panel')
+    if (panel) panel.hidden = false
+  })
 
   const input = document.getElementById('srl-bridge-url')
   const storedUrl = context().extensionSettings[SETTINGS_KEY]?.srlUrl
@@ -130,6 +136,27 @@ async function initialize() {
   document
     .getElementById('srl-bridge-disconnect')
     .addEventListener('click', () => controller.disconnect())
+  document.getElementById('srl-bridge-local-pair-approve').addEventListener('click', async () => {
+    try {
+      await controller.approveLocalAutoPairing()
+      document.getElementById('srl-bridge-local-pair-panel').hidden = true
+    } catch (error) {
+      setStatus({
+        status: 'idle',
+        detail: error instanceof Error ? error.message : '无法允许本机 APK 连接',
+      })
+    }
+  })
+
+  try {
+    await controller.startLocalAutoPairing()
+  } catch (error) {
+    appendLog({
+      level: 'warning',
+      at: Date.now(),
+      message: error instanceof Error ? error.message : '本机 APK 自动连接不可用',
+    })
+  }
 
   // 浏览器名标签依赖上面注入的 settings.html，必须在注入完成后再写入
   const browserName = currentBrowserName()

@@ -178,3 +178,62 @@ test('creates a short-lived local direct session and requires its bearer token',
     await exit()
   }
 })
+
+test('requires Tavern-side approval before a local APK relay can connect without a device code', async () => {
+  const routes = new Map()
+  const router = {
+    get(path, handler) { routes.set(`GET ${path}`, handler) },
+    post(path, handler) { routes.set(`POST ${path}`, handler) },
+    put(path, handler) { routes.set(`PUT ${path}`, handler) },
+    delete(path, handler) { routes.set(`DELETE ${path}`, handler) },
+  }
+  await init(router)
+  try {
+    const local = { socket: { remoteAddress: '127.0.0.1' } }
+    const key = 'a'.repeat(32)
+    const registered = responseRecorder()
+    routes.get('POST /local-pair/register')({ ...local, headers: { 'x-srl-local-pair-key': key } }, registered)
+    assert.equal(registered.body.ok, true)
+
+    const requested = responseRecorder()
+    routes.get('POST /local-pair/requests')(
+      { ...local, body: { srlUrl: 'https://srl.example.test/' } },
+      requested,
+    )
+    assert.match(requested.body.code, /^[2-9A-HJ-NP-Z]{8}$/u)
+    assert.match(requested.body.participantToken, /^[A-Za-z0-9_-]{32,}$/u)
+
+    const refreshedKey = 'b'.repeat(32)
+    const reRegistered = responseRecorder()
+    routes.get('POST /local-pair/register')(
+      { ...local, headers: { 'x-srl-local-pair-key': refreshedKey } },
+      reRegistered,
+    )
+    assert.equal(reRegistered.body.ok, true)
+
+    const staleKey = responseRecorder()
+    routes.get('GET /local-pair/requests')({ ...local, headers: { 'x-srl-local-pair-key': key } }, staleKey)
+    assert.equal(staleKey.statusCode, 401)
+
+    const pending = responseRecorder()
+    routes.get('GET /local-pair/requests')({ ...local, headers: { 'x-srl-local-pair-key': refreshedKey } }, pending)
+    assert.deepEqual(pending.body.requests.map((item) => item.code), [requested.body.code])
+
+    const approved = responseRecorder()
+    routes.get('POST /local-pair/requests/:code/approve')(
+      { ...local, params: { code: requested.body.code }, headers: { 'x-srl-local-pair-key': refreshedKey } },
+      approved,
+    )
+    assert.equal(approved.body.code, requested.body.code)
+    assert.match(approved.body.controllerToken, /^[A-Za-z0-9_-]{32,}$/u)
+
+    const hiddenAfterApproval = responseRecorder()
+    routes.get('GET /local-pair/requests')(
+      { ...local, headers: { 'x-srl-local-pair-key': refreshedKey } },
+      hiddenAfterApproval,
+    )
+    assert.deepEqual(hiddenAfterApproval.body.requests, [])
+  } finally {
+    await exit()
+  }
+})

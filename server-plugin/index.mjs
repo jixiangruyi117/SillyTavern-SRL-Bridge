@@ -18,6 +18,7 @@ const attempts = new Map()
 let cleanupTimer
 let directCleanupTimer
 const directSessions = new Map()
+let localPairApprover
 
 function randomToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString('base64url')
@@ -114,6 +115,35 @@ function validHttpUrl(value) {
   }
 }
 
+function isLoopbackRequest(request) {
+  const address = String(request.socket?.remoteAddress ?? request.ip ?? '')
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+}
+
+function createRelaySession(srlUrl, options = {}) {
+  let code
+  do code = randomCode()
+  while (sessions.has(code))
+  const now = Date.now()
+  const session = {
+    code,
+    pairCode: randomPairCode(),
+    srlUrl: srlUrl.href,
+    srlOrigin: srlUrl.origin,
+    controllerToken: randomToken(),
+    participantToken: options.participantToken ?? '',
+    expiresAt: now + WAITING_TTL,
+    lastSeen: { controller: now, participant: options.participantToken ? now : 0 },
+    queues: { controller: [], participant: [] },
+    queueBytes: { controller: 0, participant: 0 },
+    waiters: { controller: undefined, participant: undefined },
+    localAuto: options.localAuto === true,
+    localApproved: false,
+  }
+  sessions.set(code, session)
+  return session
+}
+
 function relayHtml(config) {
   const safeConfig = JSON.stringify(config).replace(/</g, '\\u003c')
   return `<!doctype html>
@@ -177,29 +207,80 @@ export async function init(router) {
   router.post('/sessions', (request, response) => {
     const srlUrl = validHttpUrl(request.body?.srlUrl)
     if (!srlUrl) return response.status(400).json({ error: 'SRL 地址无效' })
-    let code
-    do code = randomCode()
-    while (sessions.has(code))
-    const now = Date.now()
-    const session = {
-      code,
-      pairCode: randomPairCode(),
-      srlUrl: srlUrl.href,
-      srlOrigin: srlUrl.origin,
-      controllerToken: randomToken(),
-      participantToken: '',
-      expiresAt: now + WAITING_TTL,
-      lastSeen: { controller: now, participant: 0 },
-      queues: { controller: [], participant: [] },
-      queueBytes: { controller: 0, participant: 0 },
-      waiters: { controller: undefined, participant: undefined },
-    }
-    sessions.set(code, session)
+    const session = createRelaySession(srlUrl)
     return response.json({
-      code,
+      code: session.code,
       pairCode: session.pairCode,
       controllerToken: session.controllerToken,
       expiresAt: session.expiresAt,
+    })
+  })
+
+  router.post('/local-pair/register', (request, response) => {
+    if (!isLoopbackRequest(request)) return response.sendStatus(403)
+    const key = String(request.headers?.['x-srl-local-pair-key'] ?? '')
+    if (!/^[A-Za-z0-9_-]{32,}$/u.test(key)) return response.status(400).json({ error: 'Invalid local approval key' })
+    localPairApprover = { key, expiresAt: Date.now() + ACTIVE_TTL }
+    return response.json({ ok: true, expiresAt: localPairApprover.expiresAt })
+  })
+
+  function requireLocalApprover(request, response) {
+    if (!isLoopbackRequest(request)) {
+      response.sendStatus(403)
+      return false
+    }
+    const key = String(request.headers?.['x-srl-local-pair-key'] ?? '')
+    if (!localPairApprover || localPairApprover.expiresAt <= Date.now() || !safeEqual(localPairApprover.key, key)) {
+      response.status(401).json({ error: 'Open the local Tavern SRL Bridge extension first' })
+      return false
+    }
+    localPairApprover.expiresAt = Date.now() + ACTIVE_TTL
+    return true
+  }
+
+  router.post('/local-pair/requests', (request, response) => {
+    if (!isLoopbackRequest(request)) return response.sendStatus(403)
+    if (!localPairApprover || localPairApprover.expiresAt <= Date.now()) {
+      return response.status(409).json({ error: 'Open the local Tavern SRL Bridge extension first' })
+    }
+    const srlUrl = validHttpUrl(request.body?.srlUrl)
+    if (!srlUrl) return response.status(400).json({ error: 'Invalid SRL URL' })
+    const participantToken = randomToken()
+    const session = createRelaySession(srlUrl, { participantToken, localAuto: true })
+    queueMessage(session, 'controller', {
+      protocol: 'srl-tavern-bridge',
+      version: 2,
+      type: 'relay-joined',
+    })
+    return response.json({
+      code: session.code,
+      participantToken,
+      relayBase: '/api/plugins/srl-bridge/',
+      expiresAt: session.expiresAt,
+    })
+  })
+
+  router.get('/local-pair/requests', (request, response) => {
+    if (!requireLocalApprover(request, response)) return
+    const requests = Array.from(sessions.values())
+      .filter((session) => session.localAuto && !session.localApproved && session.expiresAt > Date.now())
+      .map((session) => ({ code: session.code, expiresAt: session.expiresAt }))
+    return response.json({ requests })
+  })
+
+  router.post('/local-pair/requests/:code/approve', (request, response) => {
+    if (!requireLocalApprover(request, response)) return
+    const session = sessions.get(String(request.params?.code ?? '').toUpperCase())
+    if (!session?.localAuto || session.localApproved || session.expiresAt <= Date.now()) {
+      return response.status(404).json({ error: 'The local connection request is missing or expired' })
+    }
+    session.localApproved = true
+    session.lastSeen.controller = Date.now()
+    session.expiresAt = Date.now() + ACTIVE_TTL
+    return response.json({
+      code: session.code,
+      controllerToken: session.controllerToken,
+      relayBase: '/api/plugins/srl-bridge/',
     })
   })
 
@@ -466,6 +547,7 @@ export async function exit() {
   clearInterval(cleanupTimer)
   clearInterval(directCleanupTimer)
   directCleanupTimer = undefined
+  localPairApprover = undefined
   for (const code of sessions.keys()) removeSession(code)
   for (const session of directSessions.values()) {
     try { fs.rmSync(session.tmpDir, { recursive: true, force: true }) } catch (_) { /* ignore */ }
