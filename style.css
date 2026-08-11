@@ -243,6 +243,37 @@
   opacity: 0.78;
 }
 
+.srl-bridge-local-pair-panel {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.srl-bridge-local-pair-panel > span {
+  display: grid;
+  gap: 0.18rem;
+  justify-content: start;
+}
+
+.srl-bridge-local-pair-panel > span strong {
+  font-family: inherit;
+  font-size: 1.08rem;
+  letter-spacing: normal;
+}
+
+.srl-bridge-local-pair-panel > p {
+  margin: 0;
+}
+
+#srl-bridge-local-pair-approve {
+  display: inline-flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 0.85rem;
+  white-space: nowrap;
+}
+
 .srl-bridge-actions .menu_button {
   display: inline-flex;
   gap: 0.48rem;

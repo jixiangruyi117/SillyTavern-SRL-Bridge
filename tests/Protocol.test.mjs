@@ -11,7 +11,7 @@ import {
 } from '../modules/Protocol.js'
 
 test('creates and validates versioned bridge envelopes', () => {
-  assert.equal(BRIDGE_EXTENSION_VERSION, '0.3.26')
+  assert.equal(BRIDGE_EXTENSION_VERSION, '0.3.27')
   const message = envelope('ping', { value: 1 })
   assert.equal(message.protocol, BRIDGE_PROTOCOL)
   assert.equal(isBridgeEnvelope(message), true)

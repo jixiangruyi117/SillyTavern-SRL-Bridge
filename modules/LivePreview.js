@@ -47,55 +47,69 @@ export function parseLivePreviewPayload(source) {
 }
 
 function removeExistingPreview() {
-  document.getElementById('srl-live-preview-message')?.remove()
+  const preview = document.getElementById('srl-live-preview-message')
+  if (!preview) return
+  const chat = preview.parentElement
+  preview.remove()
+  if (!chat) return
+  chat.querySelectorAll('.mes.last_mes').forEach((node) => node.classList.remove('last_mes'))
+  chat.querySelector('.mes:last-child')?.classList.add('last_mes')
 }
 
-function appendPreviewChrome(message, title) {
+function createPreviewMessage(context) {
+  if (typeof context.addOneMessage !== 'function') {
+    throw new Error('当前酒馆未公开 addOneMessage，无法创建真实消息预览')
+  }
+  removeExistingPreview()
+  const rendered = context.addOneMessage(
+    {
+      name: 'SRL',
+      is_user: false,
+      is_system: false,
+      mes: '',
+      send_date: Date.now(),
+      extra: {},
+    },
+    { forceId: -1, scroll: true, showSwipes: false },
+  )
+  const message = rendered?.get?.(0) ?? rendered?.[0]
+  if (!(message instanceof HTMLElement)) {
+    throw new Error('酒馆未返回完整消息节点，无法显示临时预览')
+  }
+  message.id = 'srl-live-preview-message'
+  message.classList.add('srl-live-preview-message')
+  message.dataset.srlTemporaryPreview = 'true'
+  message.querySelectorAll('.mesAvatarWrapper, .ch_name, .mes_buttons, .mes_timer').forEach((node) => node.remove())
+  const body = message.querySelector('.mes_text')
+  if (!(body instanceof HTMLElement)) {
+    message.remove()
+    throw new Error('酒馆完整消息没有正文节点，无法显示临时预览')
+  }
+  body.innerHTML = ''
   const chrome = document.createElement('style')
   chrome.textContent = `
-    #srl-live-preview-message { position: relative; }
-    #srl-live-preview-message .srl-live-preview__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .7em; margin-bottom: .65em; opacity: .82; font-size: .9em; }
-    #srl-live-preview-message .srl-live-preview__title { font-weight: 700; }
-    #srl-live-preview-message .srl-live-preview__note { flex: 1 1 15em; }
-    #srl-live-preview-message .srl-live-preview__close { min-height: 2.2em; padding: .2em .55em; }
+    #srl-live-preview-message .mes_block { min-width: 0; width: 100%; }
+    #srl-live-preview-message .srl-live-preview__footer { display: flex; justify-content: flex-end; margin-top: .75em; }
+    #srl-live-preview-message .srl-live-preview__footer button { min-height: 2.5em; }
     #srl-live-preview-message .srl-live-preview__pager { display: flex; gap: .55em; margin-top: .8em; }
     #srl-live-preview-message .srl-live-preview__pager button { min-height: 2.5em; }
   `
-  const toolbar = document.createElement('div')
-  toolbar.className = 'srl-live-preview__toolbar'
-  const label = document.createElement('strong')
-  label.className = 'srl-live-preview__title'
-  label.textContent = `SRL 临时预览 · ${title}`
-  const note = document.createElement('small')
-  note.className = 'srl-live-preview__note'
-  note.textContent = '仅当前页面显示，不写入聊天、预设或资源'
+  const footer = document.createElement('div')
+  footer.className = 'srl-live-preview__footer'
   const close = document.createElement('button')
   close.type = 'button'
-  close.className = 'srl-live-preview__close'
-  close.textContent = '关闭预览'
+  close.className = 'menu_button'
+  close.textContent = '关闭临时预览'
   close.addEventListener('click', removeExistingPreview)
-  toolbar.append(label, note, close)
-  message.append(chrome, toolbar)
-}
-
-function createPreviewMessage(title) {
-  const chat = document.getElementById('chat')
-  if (!chat) throw new Error('当前酒馆没有可用的聊天区，无法显示临时预览')
-  removeExistingPreview()
-  const message = document.createElement('div')
-  message.id = 'srl-live-preview-message'
-  message.className = 'mes srl-live-preview-message'
-  message.dataset.srlTemporaryPreview = 'true'
-  const body = document.createElement('div')
-  body.className = 'mes_text'
-  appendPreviewChrome(message, title)
-  message.append(body)
+  footer.append(close)
+  const block = message.querySelector('.mes_block')
+  if (block instanceof HTMLElement) block.append(footer)
+  else message.append(footer)
+  message.append(chrome)
   message.addEventListener('click', (event) => {
     const link = event.target instanceof Element ? event.target.closest('a[href]') : null
     if (link && /^javascript:/iu.test(link.getAttribute('href') || '')) event.preventDefault()
   })
-  chat.append(message)
-  message.scrollIntoView({ behavior: 'smooth', block: 'center' })
   return { message, body }
 }
 
@@ -134,7 +148,7 @@ function appendScopedStyle(message, css) {
 
 export async function showLivePreview(context, file) {
   const payload = parseLivePreviewPayload(await file.text())
-  const { message, body } = createPreviewMessage(payload.title)
+  const { message, body } = createPreviewMessage(context)
   if (payload.kind === 'beautification') {
     appendScopedStyle(message, payload.css)
     insertFormattedMessage(context, body, '这是由 SRL 发起的临时主题预览。', 'SRL')
@@ -164,6 +178,6 @@ export async function showLivePreview(context, file) {
   })
   render()
   pager.append(previous, next)
-  message.append(pager)
+  body.append(pager)
   return { status: 'previewed', name: payload.title }
 }
