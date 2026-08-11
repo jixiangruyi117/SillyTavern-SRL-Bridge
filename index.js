@@ -86,9 +86,9 @@ async function initialize() {
   controller = new BridgeController(new TavernAdapter())
   controller.addEventListener('state', (event) => setStatus(event.detail))
   controller.addEventListener('log', (event) => appendLog(event.detail))
-  controller.addEventListener('local-pair-request', () => {
+  controller.addEventListener('local-pair-request', (event) => {
     const panel = document.getElementById('srl-bridge-local-pair-panel')
-    if (panel) panel.hidden = false
+    if (panel) panel.hidden = !event.detail
   })
 
   const input = document.getElementById('srl-bridge-url')

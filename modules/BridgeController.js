@@ -146,7 +146,7 @@ export class BridgeController extends EventTarget {
   }
 
   async pollLocalPairRequest() {
-    if (!this.canUseLocalDirect() || this.localPairRequest || this.port) return
+    if (!this.canUseLocalDirect() || this.port) return
     const response = await fetch('/api/plugins/srl-bridge/local-pair/requests', {
       headers: this.localPairHeaders(),
       cache: 'no-store',
@@ -159,7 +159,14 @@ export class BridgeController extends EventTarget {
     const value = await response.json()
     const request = Array.isArray(value?.requests) ? value.requests[0] : undefined
     const code = typeof request?.code === 'string' ? request.code : ''
-    if (!/^[2-9A-HJ-NP-Z]{8}$/u.test(code)) return
+    if (!/^[2-9A-HJ-NP-Z]{8}$/u.test(code)) {
+      if (!this.localPairRequest) return
+      this.localPairRequest = undefined
+      this.dispatchEvent(new CustomEvent('local-pair-request', { detail: undefined }))
+      this.emitState('idle', '本机 APK 连接请求已过期，请在 APK 重新发起')
+      return
+    }
+    if (this.localPairRequest?.code === code) return
     this.localPairRequest = { code }
     this.dispatchEvent(new CustomEvent('local-pair-request', { detail: this.localPairRequest }))
   }
