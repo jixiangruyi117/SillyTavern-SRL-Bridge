@@ -10,7 +10,7 @@ export const info = {
 }
 
 const WAITING_TTL = 2 * 60 * 1000
-const ACTIVE_TTL = 30 * 60 * 1000
+const ACTIVE_TTL = 4 * 60 * 60 * 1000
 const MAX_MESSAGE_BYTES = 512 * 1024
 const MAX_QUEUE_BYTES = 2 * 1024 * 1024
 const sessions = new Map()
