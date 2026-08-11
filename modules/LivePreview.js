@@ -33,37 +33,81 @@ export function parseLivePreviewPayload(source) {
     if (!css) throw new Error('临时预览没有可显示的 CSS')
     return { kind: 'beautification', title: text(payload.title, 160) || '主题美化', css }
   }
+  if (payload.kind === 'frontendStatus') {
+    const html = text(payload.html)
+    if (!html) throw new Error('临时预览没有可显示的状态栏内容')
+    return {
+      kind: 'frontendStatus',
+      title: text(payload.title, 160) || '前端了么状态栏',
+      html,
+      css: text(payload.css),
+    }
+  }
   throw new Error('临时预览类型不受支持')
 }
 
 function removeExistingPreview() {
-  document.getElementById('srl-live-preview-host')?.remove()
+  document.getElementById('srl-live-preview-message')?.remove()
 }
 
-function createHost(title) {
+function appendPreviewChrome(message, title) {
+  const chrome = document.createElement('style')
+  chrome.textContent = `
+    #srl-live-preview-message { position: relative; }
+    #srl-live-preview-message .srl-live-preview__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .7em; margin-bottom: .65em; opacity: .82; font-size: .9em; }
+    #srl-live-preview-message .srl-live-preview__title { font-weight: 700; }
+    #srl-live-preview-message .srl-live-preview__note { flex: 1 1 15em; }
+    #srl-live-preview-message .srl-live-preview__close { min-height: 2.2em; padding: .2em .55em; }
+    #srl-live-preview-message .srl-live-preview__pager { display: flex; gap: .55em; margin-top: .8em; }
+    #srl-live-preview-message .srl-live-preview__pager button { min-height: 2.5em; }
+  `
+  const toolbar = document.createElement('div')
+  toolbar.className = 'srl-live-preview__toolbar'
+  const label = document.createElement('strong')
+  label.className = 'srl-live-preview__title'
+  label.textContent = `SRL 临时预览 · ${title}`
+  const note = document.createElement('small')
+  note.className = 'srl-live-preview__note'
+  note.textContent = '仅当前页面显示，不写入聊天、预设或资源'
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.className = 'srl-live-preview__close'
+  close.textContent = '关闭预览'
+  close.addEventListener('click', removeExistingPreview)
+  toolbar.append(label, note, close)
+  message.append(chrome, toolbar)
+}
+
+function createPreviewMessage(title) {
+  const chat = document.getElementById('chat')
+  if (!chat) throw new Error('当前酒馆没有可用的聊天区，无法显示临时预览')
   removeExistingPreview()
-  const host = document.createElement('section')
-  host.id = 'srl-live-preview-host'
-  host.setAttribute('role', 'dialog')
-  host.setAttribute('aria-modal', 'true')
-  host.setAttribute('aria-label', 'SRL 临时酒馆预览')
-  host.innerHTML = `<style>
-    #srl-live-preview-host { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; padding: 18px; background: rgba(0,0,0,.58); }
-    #srl-live-preview-shell { width: min(760px, 100%); max-height: min(82vh, 900px); overflow: auto; border-radius: 12px; background: var(--SmartThemeBlurTintColor, #222); color: var(--SmartThemeBodyColor, #eee); box-shadow: 0 20px 70px #000; }
-    #srl-live-preview-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
-    #srl-live-preview-toolbar strong { flex: 1; } #srl-live-preview-toolbar button { min-height: 38px; }
-    #srl-live-preview-stage { min-height: 120px; padding: 14px; } #srl-live-preview-stage #chat { margin: 0; }
-    #srl-live-preview-note { margin: 0; padding: 0 14px 14px; opacity: .75; font-size: .9em; }
-  </style><div id="srl-live-preview-shell"><header id="srl-live-preview-toolbar"><strong></strong><button type="button" data-srl-preview-close>关闭</button></header><main id="srl-live-preview-stage"><div id="chat"></div></main><p id="srl-live-preview-note">真实酒馆格式化 · 临时显示 · 不写入聊天、预设或资源</p></div>`
-  host.querySelector('strong').textContent = title
-  host.querySelector('[data-srl-preview-close]').addEventListener('click', removeExistingPreview)
-  host.addEventListener('click', (event) => {
-    if (event.target === host) removeExistingPreview()
+  const message = document.createElement('div')
+  message.id = 'srl-live-preview-message'
+  message.className = 'mes srl-live-preview-message'
+  message.dataset.srlTemporaryPreview = 'true'
+  const body = document.createElement('div')
+  body.className = 'mes_text'
+  appendPreviewChrome(message, title)
+  message.append(body)
+  message.addEventListener('click', (event) => {
     const link = event.target instanceof Element ? event.target.closest('a[href]') : null
     if (link && /^javascript:/iu.test(link.getAttribute('href') || '')) event.preventDefault()
   })
-  document.body.append(host)
-  return host
+  chat.append(message)
+  message.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  return { message, body }
+}
+
+function cleanPreviewNodes(target) {
+  target.querySelectorAll('script, iframe, object, embed, form').forEach((node) => node.remove())
+  target.querySelectorAll('*').forEach((node) => {
+    for (const attribute of Array.from(node.attributes)) {
+      if (/^on/iu.test(attribute.name) || /^javascript:/iu.test(attribute.value)) {
+        node.removeAttribute(attribute.name)
+      }
+    }
+  })
 }
 
 function insertFormattedMessage(context, target, source, characterName) {
@@ -73,36 +117,36 @@ function insertFormattedMessage(context, target, source, characterName) {
   const formatted = context.messageFormatting(source, characterName, false, false, 0)
   if (typeof formatted !== 'string') throw new Error('酒馆未返回可用的真实格式化结果')
   target.innerHTML = formatted
-  target.querySelectorAll('script, iframe, object, embed').forEach((node) => node.remove())
-  target.querySelectorAll('*').forEach((node) => {
-    for (const attribute of Array.from(node.attributes)) {
-      if (/^on/iu.test(attribute.name) || /^javascript:/iu.test(attribute.value)) node.removeAttribute(attribute.name)
-    }
-  })
+  cleanPreviewNodes(target)
+}
+
+function insertStatusMarkup(target, html) {
+  target.innerHTML = html
+  cleanPreviewNodes(target)
+}
+
+function appendScopedStyle(message, css) {
+  if (!css) return
+  const style = document.createElement('style')
+  style.textContent = css
+  message.append(style)
 }
 
 export async function showLivePreview(context, file) {
   const payload = parseLivePreviewPayload(await file.text())
-  const host = createHost(payload.title)
-  const chat = host.querySelector('#chat')
-  if (!chat) throw new Error('临时预览容器创建失败')
+  const { message, body } = createPreviewMessage(payload.title)
   if (payload.kind === 'beautification') {
-    const style = document.createElement('style')
-    style.textContent = payload.css
-    host.append(style)
-    const message = document.createElement('div')
-    message.className = 'mes'
-    const body = document.createElement('div')
-    body.className = 'mes_text'
+    appendScopedStyle(message, payload.css)
     insertFormattedMessage(context, body, '这是由 SRL 发起的临时主题预览。', 'SRL')
-    message.append(body)
-    chat.append(message)
     return { status: 'previewed', name: payload.title }
   }
-  const message = document.createElement('div')
-  message.className = 'mes'
-  const body = document.createElement('div')
-  body.className = 'mes_text'
+  if (payload.kind === 'frontendStatus') {
+    appendScopedStyle(message, payload.css)
+    insertStatusMarkup(body, payload.html)
+    return { status: 'previewed', name: payload.title }
+  }
+  const pager = document.createElement('div')
+  pager.className = 'srl-live-preview__pager'
   const previous = document.createElement('button')
   const next = document.createElement('button')
   previous.type = next.type = 'button'
@@ -110,10 +154,16 @@ export async function showLivePreview(context, file) {
   next.textContent = '下一条'
   let index = 0
   const render = () => insertFormattedMessage(context, body, payload.greetings[index], payload.characterName)
-  previous.addEventListener('click', () => { index = (index + payload.greetings.length - 1) % payload.greetings.length; render() })
-  next.addEventListener('click', () => { index = (index + 1) % payload.greetings.length; render() })
+  previous.addEventListener('click', () => {
+    index = (index + payload.greetings.length - 1) % payload.greetings.length
+    render()
+  })
+  next.addEventListener('click', () => {
+    index = (index + 1) % payload.greetings.length
+    render()
+  })
   render()
-  message.append(body, previous, next)
-  chat.append(message)
+  pager.append(previous, next)
+  message.append(pager)
   return { status: 'previewed', name: payload.title }
 }

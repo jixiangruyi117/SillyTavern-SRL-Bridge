@@ -31,3 +31,18 @@ test('拒绝任意类型和超长 CSS 载荷', () => {
     ),
   )
 })
+
+test('接受受限的前端了么状态栏临时预览载荷', () => {
+  const payload = parseLivePreviewPayload(
+    JSON.stringify({
+      format: 'srl-live-tavern-preview',
+      version: 1,
+      kind: 'frontendStatus',
+      title: '状态栏',
+      html: '<section>在线</section>',
+      css: '#srl-live-preview-message section { color: red; }',
+    }),
+  )
+  assert.equal(payload.kind, 'frontendStatus')
+  assert.equal(payload.html, '<section>在线</section>')
+})
