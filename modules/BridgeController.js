@@ -18,6 +18,7 @@ import {
   gunzipBlob,
 } from './Protocol.js'
 import { RelayPort } from './RelayPort.js'
+import { showLivePreview } from './LivePreview.js'
 
 export class BridgeController extends EventTarget {
   constructor(adapter) {
@@ -250,6 +251,7 @@ export class BridgeController extends EventTarget {
           'theme',
           'userPersona',
           'userAvatar',
+          'live-preview-v1',
         ],
         bridgeVersion: BRIDGE_EXTENSION_VERSION,
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
@@ -282,6 +284,7 @@ export class BridgeController extends EventTarget {
               'userPersona',
               'userAvatar',
               'local-direct-v1',
+              'live-preview-v1',
               ...(supportsGzip() ? ['gzip'] : []),
             ],
           })
@@ -310,6 +313,7 @@ export class BridgeController extends EventTarget {
             'scriptPreset',
             'userPersona',
             'userAvatar',
+            'live-preview-v1',
             ...(this.canUseLocalDirect() ? ['local-direct-v1'] : []),
             ...(supportsGzip() ? ['gzip'] : []),
           ],
@@ -423,7 +427,9 @@ export class BridgeController extends EventTarget {
   }
 
   async startIncoming(message) {
-    if (message.direction !== 'to-tavern') return
+    if (!['to-tavern', 'to-tavern-preview'].includes(message.direction)) return
+    if (message.direction === 'to-tavern-preview' && message.size > 2 * 1024 * 1024)
+      throw new Error('临时预览载荷超过 2 MiB 限制')
     if (message.size > MAX_FILE_SIZE) throw new Error('单文件超过 256 MB 限制')
     const directRequested = Object.hasOwn(message, 'localDirectSession')
     const localDirectSession = this.readLocalDirectSession(message.localDirectSession)
@@ -470,12 +476,15 @@ export class BridgeController extends EventTarget {
     const file = new File([content], transfer.meta.name, {
       type: transfer.meta.mimeType,
     })
-    const result = await this.adapter.importResource(
-      file,
-      transfer.meta.kind,
-      transfer.meta.conflictPolicy,
-      transfer.meta,
-    )
+    const result =
+      transfer.meta.direction === 'to-tavern-preview'
+        ? await showLivePreview(this.adapter.context, file)
+        : await this.adapter.importResource(
+            file,
+            transfer.meta.kind,
+            transfer.meta.conflictPolicy,
+            transfer.meta,
+          )
     if (transfer.localDirectSession) await this.removeLocalDirectFile(transfer.localDirectSession)
     await this.send('file-result', {
       requestId: message.requestId,
