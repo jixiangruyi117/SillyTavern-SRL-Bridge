@@ -269,6 +269,7 @@ export class BridgeController extends EventTarget {
         if (this.localAuto) {
           this.send('st-ready', {
             bridgeVersion: BRIDGE_EXTENSION_VERSION,
+            tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
             capabilities: [
               'character',
               'worldBook',
@@ -299,6 +300,7 @@ export class BridgeController extends EventTarget {
           : []
         this.send('st-ready', {
           bridgeVersion: BRIDGE_EXTENSION_VERSION,
+          tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
           capabilities: [
             'character',
             'worldBook',
