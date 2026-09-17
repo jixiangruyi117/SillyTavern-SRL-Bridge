@@ -42,7 +42,8 @@ export function readHelperPresetScripts(preset) {
 export function countHelperScripts(trees) {
   return trees.reduce(
     (total, tree) =>
-      total + (tree?.type === 'folder' ? (Array.isArray(tree.scripts) ? tree.scripts.length : 0) : 1),
+      total +
+      (tree?.type === 'folder' ? (Array.isArray(tree.scripts) ? tree.scripts.length : 0) : 1),
     0,
   )
 }
@@ -96,6 +97,15 @@ export class TavernAdapter {
 
   async listResources() {
     const context = this.context
+    const personas = Object.entries(context.powerUserSettings?.personas ?? {})
+      .filter(([, name]) => typeof name === 'string')
+      .map(([avatarId, name]) => ({
+        id: `userPersona:${avatarId}`,
+        kind: RESOURCE_KINDS.USER_PERSONA,
+        name,
+        fileName: `persona-${safeFileName(avatarId.replace(/\.png$/i, ''))}.json`,
+        detail: context.powerUserSettings?.persona_descriptions?.[avatarId]?.title || '用户人设',
+      }))
     const characters = context.characters.map((character) => ({
       id: `character:${character.avatar}`,
       kind: RESOURCE_KINDS.CHARACTER,
@@ -224,6 +234,7 @@ export class TavernAdapter {
       // Older SillyTavern builds may not expose themes in settings/get.
     }
     return [
+      ...personas,
       ...characters,
       ...worldBooks,
       ...presets,
@@ -253,6 +264,26 @@ export class TavernAdapter {
 
   async exportResource(item) {
     const context = this.context
+    if (item.kind === RESOURCE_KINDS.USER_PERSONA) {
+      const avatarId = item.id.slice('userPersona:'.length)
+      const settings = context.powerUserSettings
+      if (
+        !Object.prototype.hasOwnProperty.call(settings?.personas ?? {}, avatarId) ||
+        typeof settings.personas[avatarId] !== 'string'
+      ) {
+        throw new Error(`找不到用户人设“${item.name}”`)
+      }
+      return jsonFile(
+        {
+          personas: { [avatarId]: settings.personas[avatarId] },
+          persona_descriptions: {
+            [avatarId]: settings.persona_descriptions?.[avatarId] ?? {},
+          },
+          ...(settings.default_persona === avatarId ? { default_persona: avatarId } : {}),
+        },
+        `persona-${safeFileName(avatarId.replace(/\.png$/i, ''))}`,
+      )
+    }
     if (item.kind === RESOURCE_KINDS.CHARACTER) {
       const avatar = item.id.slice('character:'.length)
       const response = assertResponse(
@@ -451,11 +482,29 @@ export class TavernAdapter {
       throw new Error('用户人设 JSON 缺少 personas 或 persona_descriptions')
     }
     const powerUser = context.powerUserSettings
-    if (!powerUser || typeof powerUser !== 'object') throw new Error('当前酒馆未公开 powerUserSettings')
+    if (!powerUser || typeof powerUser !== 'object')
+      throw new Error('当前酒馆未公开 powerUserSettings')
+    const entries = Object.entries(parsed.personas).filter(
+      ([avatarId, name]) => avatarId && typeof name === 'string',
+    )
+    // Reject a conflicting batch before changing any persona, including earlier non-conflicting entries.
+    if (
+      conflictPolicy === 'copy' &&
+      entries.some(([id]) => Object.prototype.hasOwnProperty.call(powerUser.personas ?? {}, id))
+    ) {
+      throw new Error('用户人设直传暂不支持“保留两份”；请改用覆盖或跳过，避免头像键与图片错配')
+    }
+    const selected = entries.filter(
+      ([id]) =>
+        conflictPolicy !== 'skip' ||
+        !Object.prototype.hasOwnProperty.call(powerUser.personas ?? {}, id),
+    )
+    if (!selected.length) return { status: 'skipped', name: file.name }
+    await this.ensurePersonaAvatars(selected.map(([id]) => id))
     powerUser.personas ||= {}
     powerUser.persona_descriptions ||= {}
     let applied = 0
-    for (const [avatarId, name] of Object.entries(parsed.personas)) {
+    for (const [avatarId, name] of selected) {
       if (typeof name !== 'string' || !avatarId) continue
       const exists = Object.prototype.hasOwnProperty.call(powerUser.personas, avatarId)
       if (exists && conflictPolicy === 'skip') continue
@@ -477,6 +526,32 @@ export class TavernAdapter {
     }
     context.saveSettingsDebounced()
     return { status: 'created', name: `${applied} 个人设` }
+  }
+
+  async ensurePersonaAvatars(avatarIds) {
+    const response = assertResponse(
+      await fetch('/api/avatars/get', {
+        method: 'POST',
+        headers: this.context.getRequestHeaders({ omitContentType: true }),
+      }),
+      '读取酒馆用户头像',
+    )
+    const avatars = await response.json()
+    if (!Array.isArray(avatars)) throw new Error('酒馆用户头像列表格式异常')
+    const missing = avatarIds.filter((id) => !avatars.includes(id))
+    for (const id of missing) {
+      if (safeFileName(id) !== id || !/\.png$/i.test(id))
+        throw new Error('人设头像标识必须是有效的 PNG 文件名')
+    }
+    if (!missing.length) return
+    // SillyTavern's onPersonasRestoreInput also creates a default avatar for missing keys.
+    // The SRL cover stays local; use the host's own default image so the persona is listed.
+    const image = await assertResponse(
+      await fetch('/img/user-default.png'),
+      '读取酒馆默认头像',
+    ).blob()
+    for (const id of missing)
+      await this.importUserAvatar(new File([image], id, { type: 'image/png' }), id)
   }
 
   async importWorldBook(file, conflictPolicy) {
@@ -685,7 +760,10 @@ export class TavernAdapter {
       } else {
         tree.name =
           existingIndex >= 0
-            ? uniqueName(baseName, trees.map((entry) => helperTreeName(entry, '')))
+            ? uniqueName(
+                baseName,
+                trees.map((entry) => helperTreeName(entry, '')),
+              )
             : baseName
         trees.push(tree)
       }

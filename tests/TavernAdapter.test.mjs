@@ -66,15 +66,23 @@ test('imports a world book through the official endpoint and refreshes the list'
 test('uploads a persona avatar through the official avatar endpoint then writes persona fields to powerUserSettings', async () => {
   let request
   const context = installContext({
-    powerUserSettings: { personas: {}, persona_descriptions: {}, default_persona: null },
+    powerUserSettings: {
+      personas: {},
+      persona_descriptions: {},
+      default_persona: null,
+    },
   })
   globalThis.fetch = async (url, options) => {
     request = { url, options }
-    return new Response('{}', { status: 200 })
+    return new Response(url === '/api/avatars/get' ? '["alice.png"]' : '{}', {
+      status: 200,
+    })
   }
   const adapter = new TavernAdapter()
   const avatar = new File(['png'], 'alice.png', { type: 'image/png' })
-  await adapter.importResource(avatar, 'userAvatar', 'overwrite', { targetName: 'alice.png' })
+  await adapter.importResource(avatar, 'userAvatar', 'overwrite', {
+    targetName: 'alice.png',
+  })
   assert.equal(request.url, '/api/avatars/upload')
   assert.equal(request.options.body instanceof FormData, true)
 
@@ -82,7 +90,9 @@ test('uploads a persona avatar through the official avatar endpoint then writes 
     [
       JSON.stringify({
         personas: { 'alice.png': 'Alice' },
-        persona_descriptions: { 'alice.png': { description: 'Archivist', position: 0 } },
+        persona_descriptions: {
+          'alice.png': { description: 'Archivist', position: 0 },
+        },
         default_persona: 'alice.png',
       }),
     ],
@@ -230,4 +240,102 @@ test('lists and imports preset-scoped regex separately', async () => {
     path: 'regex_scripts',
     value: [{ id: 'new', scriptName: '新规则' }],
   })
+})
+
+test('lists and exports one user persona without avatars or unrelated settings and preserves descriptors', async () => {
+  const descriptor = {
+    title: '备注',
+    description: '{{user}} 与 {{char}}',
+    position: 4,
+    depth: 3,
+    role: 1,
+    lorebook: '世界书',
+    connections: [{ type: 'character', id: 'test.png' }],
+    extensionField: { keep: true },
+  }
+  const settings = {
+    personas: { 'alice.png': 'Alice', 'bob.png': 'Bob' },
+    persona_descriptions: {
+      'alice.png': descriptor,
+      'bob.png': { description: '其他人设' },
+    },
+    default_persona: 'bob.png',
+    unrelatedSecret: 'not-exported',
+  }
+  installContext({ powerUserSettings: settings })
+  const before = JSON.stringify(settings)
+  const adapter = new TavernAdapter()
+  const items = (await adapter.listResources()).filter((item) => item.kind === 'userPersona')
+  assert.equal(items.length, 2)
+  const alice = items.find((item) => item.name === 'Alice')
+  assert.equal(alice.detail, '备注')
+  const file = await adapter.exportResource(alice)
+  assert.equal(file.type, 'application/json')
+  assert.deepEqual(JSON.parse(await file.text()), {
+    personas: { 'alice.png': 'Alice' },
+    persona_descriptions: { 'alice.png': descriptor },
+  })
+  const bob = JSON.parse(
+    await (await adapter.exportResource(items.find((item) => item.name === 'Bob'))).text(),
+  )
+  assert.equal(bob.default_persona, 'bob.png')
+  assert.equal(JSON.stringify(settings), before)
+  delete settings.personas['alice.png']
+  await assert.rejects(adapter.exportResource(alice), /找不到用户人设/)
+})
+
+test('creates missing persona keys with the Tavern default avatar, without transferring the SRL cover', async () => {
+  const context = installContext()
+  const uploads = []
+  globalThis.fetch = async (url, options) => {
+    if (url === '/api/avatars/get') return new Response('[]')
+    if (url === '/img/user-default.png') return new Response('host-default-image')
+    assert.equal(url, '/api/avatars/upload')
+    uploads.push([options.body.get('overwrite_name'), await options.body.get('avatar').text()])
+    return new Response('{}')
+  }
+  const file = new File(
+    [
+      JSON.stringify({
+        personas: { 'new.png': '新用户' },
+        persona_descriptions: { 'new.png': { description: '设定' } },
+      }),
+    ],
+    'personas.json',
+  )
+  await new TavernAdapter().importUserPersona(file, 'copy')
+  assert.deepEqual(uploads, [['new.png', 'host-default-image']])
+  assert.equal(context.powerUserSettings.personas['new.png'], '新用户')
+})
+
+test('a conflicting persona batch or failed default-avatar upload never partially changes persona settings', async () => {
+  const context = installContext({
+    powerUserSettings: {
+      personas: { 'old.png': '原人设' },
+      persona_descriptions: {},
+    },
+  })
+  const original = JSON.stringify(context.powerUserSettings)
+  const file = new File(
+    [
+      JSON.stringify({
+        personas: { 'new.png': '新用户', 'old.png': '覆盖' },
+        persona_descriptions: {},
+      }),
+    ],
+    'personas.json',
+  )
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls++
+    return new Response('[]')
+  }
+  const adapter = new TavernAdapter()
+  await assert.rejects(adapter.importUserPersona(file, 'copy'), /保留两份/)
+  assert.equal(calls, 0)
+  assert.equal(JSON.stringify(context.powerUserSettings), original)
+  globalThis.fetch = async (url) =>
+    url === '/api/avatars/get' ? new Response('[]') : new Response('', { status: 500 })
+  await assert.rejects(adapter.importUserPersona(file, 'overwrite'), /默认头像/)
+  assert.equal(JSON.stringify(context.powerUserSettings), original)
 })
