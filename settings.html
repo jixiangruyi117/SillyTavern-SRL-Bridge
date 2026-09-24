@@ -1,0 +1,159 @@
+<section id="srl-bridge-settings" class="srl-bridge-settings">
+  <div class="inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header srl-bridge-drawer__header">
+      <b>酒馆资源库互传</b>
+      <span id="srl-bridge-header-status" class="srl-bridge-header-status" data-status="idle"><span>未连接</span></span>
+      <i class="inline-drawer-icon fa-solid fa-circle-chevron-down down" aria-hidden="true"></i>
+    </div>
+
+    <div class="inline-drawer-content srl-bridge-drawer__content">
+      <div class="srl-bridge-intro">
+        <p>选择连接方式，在酒馆与资源库之间传递所需资源。</p>
+        <ul aria-label="当前支持的资源">
+          <li>角色卡</li>
+          <li>世界书</li>
+          <li>预设</li>
+          <li>正则</li>
+          <li>快速回复</li>
+          <li>主题</li>
+        </ul>
+      </div>
+
+      <div class="srl-bridge-browser" role="note">
+        <i class="fa-solid fa-window-restore" aria-hidden="true"></i>
+        <span>
+          <strong id="srl-bridge-connection-heading">将在当前浏览器打开</strong>
+          <small id="srl-bridge-browser-name">正在识别当前浏览器…</small>
+        </span>
+      </div>
+
+      <label class="srl-bridge-field" for="srl-bridge-url">
+        <span><strong>SRL 地址</strong><small>打开资源库的完整网址</small></span>
+        <input
+          id="srl-bridge-url"
+          class="text_pole"
+          type="url"
+          inputmode="url"
+          autocomplete="url"
+          autocapitalize="none"
+          spellcheck="false"
+          placeholder="http://192.168.1.10:5173/"
+        />
+      </label>
+      <p id="srl-bridge-address-hint" class="srl-bridge-address-hint">
+        电脑本机可用 127.0.0.1；手机访问时请改用电脑局域网 IP 或已部署的 HTTPS 地址。
+      </p>
+
+      <div class="srl-bridge-actions">
+        <button id="srl-bridge-connect" class="menu_button srl-bridge-connect" type="button">
+          <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+          <span id="srl-bridge-connect-label">在当前浏览器打开并配对</span>
+        </button>
+        <button id="srl-bridge-device" class="menu_button" type="button">
+          <i class="fa-solid fa-key" aria-hidden="true"></i>
+          <span>生成跨浏览器设备码</span>
+        </button>
+        <button id="srl-bridge-disconnect" class="menu_button" type="button" hidden>
+          <i class="fa-solid fa-link-slash" aria-hidden="true"></i>
+          <span>断开</span>
+        </button>
+      </div>
+
+      <button id="srl-bridge-renew" class="menu_button" type="button" hidden>重新生成设备码</button>
+
+      <div
+        id="srl-bridge-local-pair-panel"
+        class="srl-bridge-device-panel srl-bridge-local-pair-panel"
+        hidden
+      >
+        <span><strong>本机 SRL 请求连接</strong></span>
+        <p>确认后将直接连接同一台设备上的 SRL APK；不需要输入设备码，文件字节不会经过云端。</p>
+        <button id="srl-bridge-local-pair-approve" class="menu_button" type="button">允许本机 APK 连接</button>
+      </div>
+
+      <div id="srl-bridge-device-panel" class="srl-bridge-device-panel" hidden>
+        <span><small>设备码</small><strong id="srl-bridge-device-code"></strong></span>
+        <button id="srl-bridge-copy-code" class="menu_button" type="button">复制设备码</button>
+        <p>
+          在上方相同地址的 SRL → 功能 → 酒馆互传中输入此设备码。设备码两分钟内有效。
+        </p>
+      </div>
+
+      <div id="srl-bridge-status" class="srl-bridge-status" data-status="idle" role="status">
+        <span class="srl-bridge-status__signal" aria-hidden="true"><i></i></span>
+        <span class="srl-bridge-status__copy">
+          <strong>尚未连接</strong>
+          <em>连接只在当前酒馆页面有效</em>
+        </span>
+        <code id="srl-bridge-code" hidden></code>
+      </div>
+
+      <details id="srl-bridge-parcels" class="srl-bridge-help srl-bridge-parcels">
+        <summary><span>加密暂存 <small>· 两端分开操作</small></span><i class="fa-solid fa-plus" aria-hidden="true"></i></summary>
+        <div class="srl-bridge-parcel-body">
+          <p>实时互传仍可使用。暂存完成后再切换应用，30 分钟内凭口令领取；每次最多 16 MiB。</p>
+          <div class="srl-bridge-parcel-modes" aria-label="暂存方向">
+            <button type="button" class="menu_button" data-parcel="mode-receive" aria-pressed="true">从资源库领取</button>
+            <button type="button" class="menu_button" data-parcel="mode-send" aria-pressed="false">发给资源库</button>
+          </div>
+          <fieldset data-parcel="receive-section"><legend class="srl-bridge-sr-only">从资源库领取</legend>
+            <label>提取口令<textarea class="text_pole" rows="3" data-parcel="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴 SRL1 开头的完整口令"></textarea></label>
+            <button type="button" class="menu_button" data-parcel="receive">领取并校验</button>
+            <div data-parcel="preview-section" hidden>
+              <strong>校验完成，请确认导入</strong><ul data-parcel="preview"></ul>
+              <label>同名资源<select class="text_pole" data-parcel="policy"><option value="skip">跳过同名（推荐）</option><option value="copy">保留副本（人设请选跳过）</option><option value="overwrite">覆盖同名</option></select></label>
+              <p>覆盖会替换原内容；助手脚本保持停用。导入后沿用在线互传的刷新方式，不会自动切换角色或主题。</p>
+              <button type="button" class="menu_button" data-parcel="confirm" hidden>确认导入</button>
+            </div>
+          </fieldset>
+          <fieldset data-parcel="send-section" hidden><legend class="srl-bridge-sr-only">发给资源库</legend>
+            <div data-parcel="selection">
+              <button type="button" class="menu_button" data-parcel="load">读取酒馆资源</button>
+              <input class="text_pole" type="search" data-parcel="search" aria-label="搜索酒馆资源" placeholder="搜索资源名称" />
+              <div data-parcel="list" class="srl-bridge-parcel-list"></div>
+              <button type="button" class="menu_button" data-parcel="more" hidden>再显示 50 项</button>
+              <button type="button" class="menu_button" data-parcel="send">暂存所选资源</button>
+            </div>
+            <div data-parcel="outgoing" hidden>
+              <strong>暂存就绪，可以切换到资源库</strong>
+              <label>提取口令<textarea class="text_pole" data-parcel="ticket" readonly rows="3"></textarea></label>
+              <p>口令包含解密密钥，仅交给接收方。关闭本页前请先复制。</p>
+              <div class="srl-bridge-parcel-actions"><button type="button" class="menu_button" data-parcel="copy">复制口令</button><button type="button" class="menu_button" data-parcel="remove">删除暂存</button></div>
+            </div>
+          </fieldset>
+          <div class="srl-bridge-parcel-feedback"><p data-parcel="status" role="status"></p><button type="button" class="menu_button" data-parcel="cancel" hidden>取消</button></div>
+        </div>
+      </details>
+
+      <details class="srl-bridge-help">
+        <summary>
+          <span>连接与手机使用说明</span><i class="fa-solid fa-plus" aria-hidden="true"></i>
+        </summary>
+        <div>
+          <p>
+            <strong>手机可以传。</strong>请先用手机浏览器打开能够访问的
+            SillyTavern，再从本面板打开同样可访问的 SRL 地址。
+          </p>
+          <p>
+            <strong>为什么不能自动选择“最常用浏览器”？</strong
+            >网页无权读取其他浏览器的使用频率和本地数据库。当前直连会固定使用正在打开酒馆的浏览器；如果
+            SRL 数据保存在另一浏览器，请直接在那里输入设备码；两端不方便同时保持前台时，使用上面的加密暂存与领取。
+          </p>
+          <p>
+            扩展只接受这里填写的 SRL 来源；文件分块传输并校验
+            SHA-256，不会上传酒馆账号，也不会直接开放酒馆数据目录。
+          </p>
+        </div>
+      </details>
+
+      <section class="srl-bridge-activity" aria-labelledby="srl-bridge-activity-title">
+        <header>
+          <strong id="srl-bridge-activity-title">最近操作</strong>
+          <small>仅保留当前页面最近 5 条</small>
+        </header>
+        <ol id="srl-bridge-log" class="srl-bridge-log"></ol>
+        <p class="srl-bridge-log-empty">连接后，传输结果会显示在这里。</p>
+      </section>
+    </div>
+  </div>
+</section>

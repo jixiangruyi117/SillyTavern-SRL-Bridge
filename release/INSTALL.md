@@ -1,0 +1,66 @@
+# SRL 酒馆互传安装说明
+
+页面扩展也可以直接在 SillyTavern 的“安装扩展”中粘贴以下地址：
+
+`https://github.com/jixiangruyi117/SillyTavern-SRL-Bridge.git`
+
+## 先选你需要的模式
+
+- 只在同一个浏览器里使用：只安装“酒馆页面扩展”即可。
+- 手机、不同浏览器或未来 APK 互传：0.3.17 起只需页面扩展和已更新的 SRL HTTPS 服务端。设备码服务端插件只用于旧版或纯本机离线部署兼容。
+
+## 一、安装酒馆页面扩展
+
+1. 关闭 SillyTavern。
+2. 解压 `srl-bridge-extension`。
+3. 将里面的 `srl-bridge` 整个文件夹复制到：
+   `SillyTavern/data/default-user/extensions/srl-bridge`
+4. 启动 SillyTavern，在扩展设置里找到“酒馆资源库互传”。
+
+如果使用的不是 `default-user`，请把路径中的用户名替换成当前酒馆用户目录。
+
+## 二、可选：安装旧版兼容服务端插件
+
+服务端插件具有和 SillyTavern 服务端相同的本机权限，只应安装来自项目官方发布页的版本。
+
+1. 关闭 SillyTavern。
+2. 解压 `srl-bridge-server-plugin`。
+3. 将里面的 `srl-bridge` 整个文件夹复制到：
+   `SillyTavern/plugins/srl-bridge`
+4. 用文本编辑器打开 `SillyTavern/config.yaml`。
+5. 找到 `enableServerPlugins: false`，改成 `enableServerPlugins: true`。
+6. 重新启动 SillyTavern。启动日志出现 `[SRL Bridge] Short-lived device relay loaded` 即安装成功。
+
+服务端插件不能由浏览器页面扩展自动安装，这是为了避免第三方前端扩展越权写入 SillyTavern 服务端目录。更新时请从 GitHub 最新 Release 重新下载并覆盖这两个文件。
+
+Windows 也可下载仓库的 `scripts/install-server-plugin.ps1`，然后运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-server-plugin.ps1
+```
+
+脚本会自动寻找常见安装位置；找到多个酒馆时让用户选择，找不到时才要求粘贴路径。也可用 `-SillyTavernPath "D:\你的路径\SillyTavern"` 明确指定。它会直接下载并校验服务端插件的两个文件、把旧插件移到酒馆根目录的 `.srl-bridge-backups`、复制新版，并将 `enableServerPlugins` 设为 `true`。安装后仍需完全重启酒馆。
+
+Android/Termux、Linux 和 macOS 使用完整包内的 `scripts/install-server-plugin.sh`：
+
+```bash
+bash scripts/install-server-plugin.sh
+```
+
+安装器会先下载并校验新插件；新插件可用后才替换旧的 `plugins/srl-bridge`；安装成功后默认删除旧插件临时备份。如果下载、复制或配置写入失败，会自动恢复旧插件。需要保留旧版备份时追加 `--keep-backup`。
+
+Termux 官方常见路径 `~/SillyTavern` 会自动识别；失败时使用 `--path "/你的路径/SillyTavern"`。联网安装器直接下载两个插件文件，不依赖可能返回 403 的 GitHub Release ZIP，也不需要解压工具；只有使用 `--package 文件.zip` 离线安装时才需要 `unzip`。iPhone/iPad 无法本机运行完整酒馆，应在实际运行 SillyTavern 的电脑或服务器安装。
+
+## 三、跨浏览器连接
+
+1. 在酒馆扩展设置中填写 SRL 地址，点击“生成跨浏览器设备码”。
+2. 在手机或另一浏览器打开 SRL，进入“功能 → 酒馆互传”。
+3. 只填写八位设备码。
+4. 核对两边六位确认码，再允许连接。
+
+设备码等待两分钟内有效；任一端离线约三十分钟后清理，双方在线时保持连接；SRL 服务重启后立即失效。中继不会把资源文件保存到服务器磁盘。
+
+## 常见问题
+
+- 新版设备码不需要填写或公网暴露 SillyTavern 地址，只需确保酒馆页和资源库页都能访问同一个 SRL HTTPS 地址。
+- 只部署 SRL 到 Netlify 不会自动安装酒馆插件；插件必须安装到运行 SillyTavern 的设备或服务器。
