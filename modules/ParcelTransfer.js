@@ -3,6 +3,7 @@ const CHUNK = 256 * 1024
 const LIMIT = 16 * 1024 * 1024
 const enc = new TextEncoder()
 const kinds = new Set([
+  'chat',
   'character',
   'worldBook',
   'preset',

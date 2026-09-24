@@ -1,4 +1,5 @@
-import { MAX_FILE_SIZE, RESOURCE_KINDS, safeFileName, uniqueName } from './Protocol.js?v=0.3.35'
+import { MAX_FILE_SIZE, RESOURCE_KINDS, safeFileName, uniqueName } from './Protocol.js?v=0.3.36-chat.3'
+import { listChatResources, exportChatArchive } from './TavernChatArchive.js?v=0.3.36-chat.3'
 
 function assertResponse(response, action) {
   if (response.ok) return response
@@ -115,8 +116,9 @@ export class TavernAdapter {
     return context
   }
 
-  async listResources() {
+  async listResources(kind) {
     const context = this.context
+    if (kind === 'chat') return listChatResources(context)
     const personas = Object.entries(context.powerUserSettings?.personas ?? {})
       .filter(([, name]) => typeof name === 'string')
       .map(([avatarId, name]) => ({
@@ -285,6 +287,8 @@ export class TavernAdapter {
 
   async exportResource(item) {
     const context = this.context
+    if (item.kind === RESOURCE_KINDS.CHAT)
+      return exportChatArchive(context, item, (card) => this.exportResource(card))
     if (item.kind === RESOURCE_KINDS.USER_PERSONA) {
       const avatarId = item.id.slice('userPersona:'.length)
       const settings = context.powerUserSettings

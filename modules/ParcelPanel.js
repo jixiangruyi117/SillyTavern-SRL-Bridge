@@ -1,6 +1,6 @@
-import { createParcel, readParcel, removeParcel } from './ParcelTransfer.js?v=0.3.35'
-import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.35'
-import { sha256 } from './Protocol.js?v=0.3.35'
+import { createParcel, readParcel, removeParcel } from './ParcelTransfer.js?v=0.3.36-chat.3'
+import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.36-chat.3'
+import { sha256 } from './Protocol.js?v=0.3.36-chat.3'
 
 export function attachParcelPanel(controller, getBase) {
   const panel = document.getElementById('srl-bridge-parcels')
@@ -22,7 +22,7 @@ export function attachParcelPanel(controller, getBase) {
     }
   })
   function renderList() {
-    const matching = inventory.filter((item) => item.name.toLocaleLowerCase().includes(get('search').value.toLocaleLowerCase()))
+    const matching = inventory.filter((item) => `${item.name} ${item.detail || ''}`.toLocaleLowerCase().includes(get('search').value.toLocaleLowerCase()))
     list.replaceChildren()
     for (const item of matching.slice(0, shown)) {
       const label = document.createElement('label')
@@ -51,6 +51,11 @@ export function attachParcelPanel(controller, getBase) {
     inventory = await controller.adapter.listResources()
     selected.clear(); renderList()
     progress(`已读取 ${inventory.length} 项，请勾选要暂存的资源`)
+  }))
+  get('load-chats').addEventListener('click', () => run(async () => {
+    inventory = await controller.adapter.listResources('chat')
+    selected.clear(); shown = 50; renderList()
+    progress(`已读取 ${inventory.length} 条已保存聊天；每条随附所属角色卡，请勾选后暂存`)
   }))
   panel.querySelector('[data-parcel=send]').addEventListener('click', () => run(async () => {
     if (outgoing) throw new Error('请先复制口令，或删除当前暂存后再发送')

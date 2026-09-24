@@ -18,10 +18,10 @@ import {
   supportsGzip,
   gzipBlob,
   gunzipBlob,
-} from './Protocol.js?v=0.3.35'
-import { RelayPort } from './RelayPort.js?v=0.3.35'
-import { detectHostRuntime } from './HostRuntime.js?v=0.3.35'
-import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.35'
+} from './Protocol.js?v=0.3.36-chat.3'
+import { RelayPort } from './RelayPort.js?v=0.3.36-chat.3'
+import { detectHostRuntime } from './HostRuntime.js?v=0.3.36-chat.3'
+import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.36-chat.3'
 
 function isServerPluginRelayPath(value) {
   let pathname
@@ -326,6 +326,7 @@ export class BridgeController extends EventTarget {
           'userPersona',
           'userAvatar',
           'persona-avatar-check-v1',
+          'chat-archive-v1',
         ],
         bridgeVersion: BRIDGE_EXTENSION_VERSION,
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
@@ -359,6 +360,7 @@ export class BridgeController extends EventTarget {
               'userPersona',
               'userAvatar',
               'persona-avatar-check-v1',
+              'chat-archive-v1',
               'local-direct-v1',
               ...(supportsGzip() ? ['gzip'] : []),
             ],
@@ -390,6 +392,7 @@ export class BridgeController extends EventTarget {
             'userPersona',
             'userAvatar',
             'persona-avatar-check-v1',
+            'chat-archive-v1',
             'import-receipts-v1',
             ...(this.canUseLocalDirect() ? ['local-direct-v1'] : []),
             ...(supportsGzip() ? ['gzip'] : []),
@@ -399,7 +402,7 @@ export class BridgeController extends EventTarget {
       } else if (message.type === 'list-request') {
         this.send('list-response', {
           requestId: message.requestId,
-          items: await this.adapter.listResources(),
+          items: await this.adapter.listResources(message.kind === 'chat' ? 'chat' : undefined),
         })
       } else if (message.type === 'persona-avatar-check-request') {
         const requested = Array.isArray(message.avatarIds)
@@ -479,10 +482,12 @@ export class BridgeController extends EventTarget {
   }
 
   async sendResources(requestId, items, localDirect = false) {
-    const listed = new Map((await this.adapter.listResources()).map((item) => [item.id, item]))
+    const listed = new Map((items.some((item) => !item.id?.startsWith('chat:'))
+      ? await this.adapter.listResources() : []).map((item) => [item.id, item]))
     let completed = 0
     for (const requested of items) {
-      const item = listed.get(requested.id)
+      const item = requested.id?.startsWith('chat:')
+        ? { id: requested.id, kind: 'chat', name: '聊天记录' } : listed.get(requested.id)
       if (!item) continue
       const file = await this.adapter.exportResource(item)
       await this.sendFile(file, item.kind, requestId, item.name, localDirect)

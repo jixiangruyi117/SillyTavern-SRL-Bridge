@@ -1,6 +1,6 @@
 export const BRIDGE_PROTOCOL = 'srl-tavern-bridge'
 export const BRIDGE_VERSION = 2
-export const BRIDGE_EXTENSION_VERSION = '0.3.35'
+export const BRIDGE_EXTENSION_VERSION = '0.3.36-chat.3'
 export const CHUNK_SIZE = 256 * 1024
 export const MIN_IN_FLIGHT_CHUNKS = 2
 export const DEFAULT_IN_FLIGHT_CHUNKS = 4
@@ -10,6 +10,7 @@ export const MAX_ACTIVE_INCOMING_TRANSFERS = 3
 export const MAX_ACTIVE_LONG_OPERATIONS = 2
 
 export const RESOURCE_KINDS = Object.freeze({
+  CHAT: 'chat',
   CHARACTER: 'character',
   WORLD_BOOK: 'worldBook',
   PRESET: 'preset',
