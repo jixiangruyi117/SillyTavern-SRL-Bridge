@@ -1,7 +1,7 @@
-import { BridgeController } from './modules/BridgeController.js?v=0.3.36-chat.3'
-import { TavernAdapter } from './modules/TavernAdapter.js?v=0.3.36-chat.3'
-import { waitForHostReady } from './modules/HostRuntime.js?v=0.3.36-chat.3'
-import { attachParcelPanel } from './modules/ParcelPanel.js?v=0.3.36-chat.3'
+import { BridgeController } from './modules/BridgeController.js?v=0.3.36-chat.4'
+import { TavernAdapter } from './modules/TavernAdapter.js?v=0.3.36-chat.4'
+import { waitForHostReady } from './modules/HostRuntime.js?v=0.3.36-chat.4'
+import { attachParcelPanel } from './modules/ParcelPanel.js?v=0.3.36-chat.4'
 
 const SETTINGS_KEY = 'srl-bridge'
 let controller

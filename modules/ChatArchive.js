@@ -76,8 +76,7 @@ export function createChatArchive(card, chat, avatar, displayRules = [], regexCo
   )
 }
 export async function readChatArchive(file) {
-  if (file.size < 13 || file.size > MAX_ARCHIVE_SIZE)
-    throw new Error('聊天传输包大小无效')
+  if (file.size < 13 || file.size > MAX_ARCHIVE_SIZE) throw new Error('聊天传输包大小无效')
   const prefix = await file.slice(0, 12).arrayBuffer()
   if (decoder.decode(new Uint8Array(prefix, 0, 8)) !== MAGIC)
     throw new Error('不是受支持的聊天传输包')

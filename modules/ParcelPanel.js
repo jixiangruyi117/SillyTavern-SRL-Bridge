@@ -1,6 +1,6 @@
-import { createParcel, readParcel, removeParcel } from './ParcelTransfer.js?v=0.3.36-chat.3'
-import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.36-chat.3'
-import { sha256 } from './Protocol.js?v=0.3.36-chat.3'
+import { createParcel, readParcel, removeParcel } from './ParcelTransfer.js?v=0.3.36-chat.4'
+import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.36-chat.4'
+import { sha256 } from './Protocol.js?v=0.3.36-chat.4'
 
 export function attachParcelPanel(controller, getBase) {
   const panel = document.getElementById('srl-bridge-parcels')
@@ -86,10 +86,12 @@ export function attachParcelPanel(controller, getBase) {
   panel.querySelector('[data-parcel=receive]').addEventListener('click', () => run(async () => {
     received = []; preview.replaceChildren(); confirm.hidden = true; get('preview-section').hidden = true
     received = await readParcel(getBase(), panel.querySelector('[data-parcel=code]').value, progress, { signal: operation.signal })
-    for (const item of received) { const li = document.createElement('li'); li.textContent = item.displayName; preview.append(li) }
+    for (const item of received) { const li = document.createElement('li'); li.textContent = item.displayName + (item.kind === 'chat' ? ` → ${item.targetName || '未绑定角色'}（新增聊天，不覆盖）` : ''); preview.append(li) }
     confirm.hidden = false; get('preview-section').hidden = false
   }, true))
   confirm.addEventListener('click', () => run(async () => {
+    const chats = received.filter(item => item.kind === 'chat')
+    if (chats.length && !window.confirm('请确认接收角色：\n' + chats.map(item => `${item.displayName} → ${item.targetName || '未绑定角色'}`).join('\n') + '\n聊天将新增为副本；配套正则（若有）保持停用。')) return
     let completed = 0
     for (const item of received) {
       // Reusing the same parcel replays its receipt; it cannot silently create duplicate copies.

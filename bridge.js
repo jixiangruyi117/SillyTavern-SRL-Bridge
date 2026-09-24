@@ -1,4 +1,4 @@
-import { isBridgeEnvelope } from './modules/Protocol.js?v=0.3.36-chat.3'
+import { isBridgeEnvelope } from './modules/Protocol.js?v=0.3.36-chat.4'
 
 const params = new URLSearchParams(location.search)
 const target = params.get('target')

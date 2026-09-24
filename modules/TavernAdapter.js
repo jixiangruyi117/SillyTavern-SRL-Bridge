@@ -1,5 +1,5 @@
-import { MAX_FILE_SIZE, RESOURCE_KINDS, safeFileName, uniqueName } from './Protocol.js?v=0.3.36-chat.3'
-import { listChatResources, exportChatArchive } from './TavernChatArchive.js?v=0.3.36-chat.3'
+import { MAX_FILE_SIZE, RESOURCE_KINDS, safeFileName, uniqueName } from './Protocol.js?v=0.3.36-chat.4'
+import { listChatResources, exportChatArchive, importChatRecord } from './TavernChatArchive.js?v=0.3.36-chat.4'
 
 function assertResponse(response, action) {
   if (response.ok) return response
@@ -414,6 +414,7 @@ export class TavernAdapter {
 
   async importResource(file, kind, conflictPolicy = 'copy', metadata = {}) {
     if (file.size > MAX_FILE_SIZE) throw new Error('单个文件超过 256 MB，已停止导入')
+    if (kind === RESOURCE_KINDS.CHAT) return importChatRecord(this.context, file, metadata.targetName)
     if (kind === RESOURCE_KINDS.CHARACTER) return this.importCharacter(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.WORLD_BOOK) return this.importWorldBook(file, conflictPolicy)
     if (kind === RESOURCE_KINDS.PRESET) return this.importPreset(file, conflictPolicy)
@@ -704,14 +705,17 @@ export class TavernAdapter {
 
   async importScopedRegex(file, conflictPolicy, requestedName) {
     const parsed = JSON.parse(await file.text())
-    const incoming = Array.isArray(parsed) ? parsed : parsed.scoped
+    let incoming = Array.isArray(parsed) ? parsed : parsed.scoped
     if (!Array.isArray(incoming) || !incoming.length) throw new Error('角色卡正则文件为空')
+    if (parsed.chatCompanion === true) {
+      conflictPolicy = 'copy'
+      incoming = incoming.map(rule => ({ ...rule, disabled: true }))
+    }
     const targetName = requestedName || parsed.sourceName
-    const index = this.context.characters.findIndex(
-      (character) =>
-        character.name?.toLocaleLowerCase() === String(targetName).toLocaleLowerCase() ||
-        character.avatar === parsed.sourceAvatar,
-    )
+    const avatar = parsed.sourceAvatar
+    const index = this.context.characters.findIndex((character) => avatar
+      ? character.avatar === avatar
+      : character.name?.toLocaleLowerCase() === String(targetName).toLocaleLowerCase())
     if (index < 0) throw new Error(`酒馆中找不到目标角色卡“${targetName || '未指定'}”`)
     const character = this.context.characters[index]
     const existing = Array.isArray(character.data?.extensions?.regex_scripts)

@@ -1,5 +1,5 @@
-import { createChatArchive } from './ChatArchive.js?v=0.3.36-chat.3'
-import { MAX_FILE_SIZE } from './Protocol.js?v=0.3.36-chat.3'
+import { createChatArchive } from './ChatArchive.js?v=0.3.36-chat.4'
+import { MAX_FILE_SIZE } from './Protocol.js?v=0.3.36-chat.4'
 
 function safeName(value) {
   return typeof value === 'string' && value.length <= 255 && !/[\\/\u0000-\u001f]/u.test(value)
@@ -75,4 +75,31 @@ export async function exportChatArchive(context, item, exportCard) {
     presetEnabled: Array.isArray(presetAllowed) && presetAllowed.includes(presetName),
     characterEnabled: Array.isArray(characterAllowed) && characterAllowed.includes(avatar),
   })
+}
+
+/** Use the host's JSONL importer and an explicitly confirmed avatar, never live-chat save. */
+export async function importChatRecord(context, file, avatar) {
+  if (!safeName(avatar) || !avatar.endsWith('.png') ||
+      !context.characters.some(card => card.avatar === avatar))
+    throw new Error('接收角色不存在，请刷新资源库目录并重新确认目标')
+  if (!/\.jsonl$/i.test(file.name) || file.size < 1 || file.size > MAX_FILE_SIZE)
+    throw new Error('聊天回传需要有效的 JSONL 原件（最大 256 MB）')
+  // ST JSON.parse(header) does not accept a UTF-8 BOM; remove only those three bytes.
+  const prefix = new Uint8Array(await file.slice(0, 3).arrayBuffer())
+  const body = prefix[0] === 239 && prefix[1] === 187 && prefix[2] === 191 ? file.slice(3) : file
+  const form = new FormData()
+  form.append('avatar', body, file.name)
+  form.append('avatar_url', avatar)
+  form.append('file_type', 'jsonl')
+  form.append('user_name', context.name1 || 'User')
+  // Host import names include character_name. Unique suffix prevents same-tick overwrites.
+  form.append('character_name', `${file.name.slice(0, -6).slice(0, 120)} SRL-${crypto.randomUUID().slice(0, 8)}`)
+  const response = await fetch('/api/chats/import', {
+    method: 'POST', headers: context.getRequestHeaders({ omitContentType: true }), body: form,
+  })
+  if (!response.ok) throw new Error(`导入聊天失败（HTTP ${response.status}）`)
+  const result = await response.json()
+  if (result.error || !result.res || !Array.isArray(result.fileNames) || !result.fileNames.length)
+    throw new Error('酒馆未确认保存聊天，资源库原件仍保留')
+  return { status: 'created', name: result.fileNames.join('、') }
 }

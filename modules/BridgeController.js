@@ -18,10 +18,10 @@ import {
   supportsGzip,
   gzipBlob,
   gunzipBlob,
-} from './Protocol.js?v=0.3.36-chat.3'
-import { RelayPort } from './RelayPort.js?v=0.3.36-chat.3'
-import { detectHostRuntime } from './HostRuntime.js?v=0.3.36-chat.3'
-import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.36-chat.3'
+} from './Protocol.js?v=0.3.36-chat.4'
+import { RelayPort } from './RelayPort.js?v=0.3.36-chat.4'
+import { detectHostRuntime } from './HostRuntime.js?v=0.3.36-chat.4'
+import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.36-chat.4'
 
 function isServerPluginRelayPath(value) {
   let pathname
@@ -327,6 +327,7 @@ export class BridgeController extends EventTarget {
           'userAvatar',
           'persona-avatar-check-v1',
           'chat-archive-v1',
+          'chat-import-v1',
         ],
         bridgeVersion: BRIDGE_EXTENSION_VERSION,
         tavernVersion: window.SillyTavern?.getContext?.().version || '1.18+',
@@ -361,6 +362,7 @@ export class BridgeController extends EventTarget {
               'userAvatar',
               'persona-avatar-check-v1',
               'chat-archive-v1',
+              'chat-import-v1',
               'local-direct-v1',
               ...(supportsGzip() ? ['gzip'] : []),
             ],
@@ -393,6 +395,7 @@ export class BridgeController extends EventTarget {
             'userAvatar',
             'persona-avatar-check-v1',
             'chat-archive-v1',
+            'chat-import-v1',
             'import-receipts-v1',
             ...(this.canUseLocalDirect() ? ['local-direct-v1'] : []),
             ...(supportsGzip() ? ['gzip'] : []),
