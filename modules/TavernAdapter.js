@@ -1,5 +1,5 @@
-import { MAX_FILE_SIZE, RESOURCE_KINDS, safeFileName, uniqueName } from './Protocol.js?v=0.3.36-chat.4'
-import { listChatResources, exportChatArchive, importChatRecord } from './TavernChatArchive.js?v=0.3.36-chat.4'
+import { MAX_FILE_SIZE, RESOURCE_KINDS, safeFileName, uniqueName } from './Protocol.js?v=0.3.37'
+import { listChatResources, exportChatArchive, importChatRecord } from './TavernChatArchive.js?v=0.3.37'
 
 function assertResponse(response, action) {
   if (response.ok) return response

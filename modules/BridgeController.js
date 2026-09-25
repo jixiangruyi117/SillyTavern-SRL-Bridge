@@ -18,10 +18,10 @@ import {
   supportsGzip,
   gzipBlob,
   gunzipBlob,
-} from './Protocol.js?v=0.3.36-chat.4'
-import { RelayPort } from './RelayPort.js?v=0.3.36-chat.4'
-import { detectHostRuntime } from './HostRuntime.js?v=0.3.36-chat.4'
-import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.36-chat.4'
+} from './Protocol.js?v=0.3.37'
+import { RelayPort } from './RelayPort.js?v=0.3.37'
+import { detectHostRuntime } from './HostRuntime.js?v=0.3.37'
+import { reserveImport, completeImport } from './ImportReceipts.js?v=0.3.37'
 
 function isServerPluginRelayPath(value) {
   let pathname
@@ -517,7 +517,7 @@ export class BridgeController extends EventTarget {
       } catch (error) {
         if (directSession) await this.removeLocalDirectFile(directSession)
         directSession = undefined
-        this.emitLog(`本机直传不可用，已回退设备码传输：${file.name}`, 'warning')
+        this.emitLog(`已改用设备码中继继续传输（本机直传未建立）：${file.name}`, 'info')
       }
     }
     await this.send('file-start', {
@@ -689,7 +689,7 @@ export class BridgeController extends EventTarget {
         ...this.adapter.context.getRequestHeaders(),
         'Content-Type': file.type || 'application/octet-stream',
         'X-SRL-Direct-Token': session.token,
-        'X-SRL-File-Name': file.name,
+        // Original names travel in file-start; the temporary payload needs no Unicode header.
       },
       body: file,
       cache: 'no-store',

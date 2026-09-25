@@ -16,21 +16,22 @@ function fixture() {
     addEventListener() {}, removeEventListener() {} }
   globalThis.fetch = async (url, init) => {
     const body = JSON.parse(init.body); calls.push({ url, body })
-    if (url === '/api/characters/chats') return Response.json([{ file_name: '雨夜.jsonl' }])
+    if (url === '/api/characters/chats') return Response.json([{ file_name: '雨夜.jsonl', file_size: '2.50 MB' }])
     if (url === '/api/chats/export') return Response.json({ result: original })
     if (url === '/api/characters/export') return new Response(body.avatar_url)
     throw new Error(`Unexpected request ${url}`)
   }
   return { calls, context, restore() { Object.assign(globalThis, previous) } }
 }
-test('lists saved chats on demand using simple metadata and distinct avatar identities', async () => {
+test('lists saved chats on demand with host sizes and distinct avatar identities', async () => {
   const f = fixture()
   try {
     const items = await new TavernAdapter().listResources('chat')
     assert.equal(items.length, 2)
     assert.notEqual(items[0].id, items[1].id)
     assert.match(items[0].detail, /a.png/)
-    assert.ok(f.calls.every(({ url, body }) => url === '/api/characters/chats' && body.simple === true))
+    assert.equal(items[0].sizeLabel, '2.50 MB')
+    assert.ok(f.calls.every(({ url, body }) => url === '/api/characters/chats' && body.simple === false))
   } finally { f.restore() }
 })
 test('exports unchanged JSONL and the actual selected character PNG; never saves, switches or deletes chats', async () => {

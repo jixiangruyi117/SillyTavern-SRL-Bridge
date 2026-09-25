@@ -1,31 +1,36 @@
-import { createChatArchive } from './ChatArchive.js?v=0.3.36-chat.4'
-import { MAX_FILE_SIZE } from './Protocol.js?v=0.3.36-chat.4'
+import { createChatArchive } from './ChatArchive.js?v=0.3.37'
+import { MAX_FILE_SIZE } from './Protocol.js?v=0.3.37'
 
 function safeName(value) {
   return typeof value === 'string' && value.length <= 255 && !/[\\/\u0000-\u001f]/u.test(value)
 }
-async function chatNames(context, avatar) {
+async function chatNames(context, avatar, includeSizes = false) {
   const response = await fetch('/api/characters/chats', {
     method: 'POST', headers: context.getRequestHeaders(),
-    body: JSON.stringify({ avatar_url: avatar, simple: true }),
+    body: JSON.stringify({ avatar_url: avatar, simple: !includeSizes }),
   })
   if (!response.ok) throw new Error(`读取 ${avatar} 的聊天目录失败（HTTP ${response.status}）`)
   const data = await response.json()
   // SillyTavern returns error:true when this character has no chat directory yet.
   if (data?.error === true) return []
   if (!data || typeof data !== 'object') throw new Error('酒馆返回了无效的聊天目录')
-  return Object.values(data).map((row) => row?.file_name)
-    .filter((name) => safeName(name) && name.endsWith('.jsonl'))
+  return Object.values(data)
+    .filter((row) => safeName(row?.file_name) && row.file_name.endsWith('.jsonl'))
+    .map((row) => ({ name: row.file_name,
+      sizeLabel: typeof row.file_size === 'string' && /^\d+(?:\.\d+)?\s*(?:[KMGT]?B|Bytes)$/i.test(row.file_size.trim())
+        ? row.file_size.trim() : undefined }))
 }
 export async function listChatResources(context) {
   const characters = context.characters.filter((card) => safeName(card.avatar) && card.avatar.endsWith('.png'))
   const items = []
-  // Explicit, on-demand inventory; do not read every message or save/switch the live chat.
+  // Explicit inventory only. The host's normal chat index supplies rounded sizes;
+  // it may scan files server-side, but no chat body is transferred or changed here.
   for (let offset = 0; offset < characters.length; offset += 4) {
     const groups = await Promise.all(characters.slice(offset, offset + 4).map(async (card) =>
-      (await chatNames(context, card.avatar)).map((file) => ({
+      (await chatNames(context, card.avatar, true)).map(({ name: file, sizeLabel }) => ({
         id: `chat:${JSON.stringify([card.avatar, file])}`, kind: 'chat',
         name: file.slice(0, -6), fileName: `${file.slice(0, -6)}.srlchat`,
+        ...(sizeLabel ? { sizeLabel } : {}),
         detail: `聊天记录 · ${card.name || card.avatar} · ${card.avatar}（随附角色卡）`,
       }))))
     items.push(...groups.flat())
@@ -38,7 +43,7 @@ export async function exportChatArchive(context, item, exportCard) {
   const [avatar, name] = Array.isArray(identity) ? identity : []
   if (!safeName(avatar) || !safeName(name) ||
       !context.characters.some((card) => card.avatar === avatar) ||
-      !(await chatNames(context, avatar)).includes(name))
+      !(await chatNames(context, avatar)).some((file) => file.name === name))
     throw new Error('聊天或所属角色已不存在，请重新读取目录')
   const response = await fetch('/api/chats/export', {
     method: 'POST', headers: context.getRequestHeaders(),

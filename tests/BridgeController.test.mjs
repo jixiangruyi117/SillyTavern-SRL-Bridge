@@ -5,6 +5,30 @@ import { BridgeController } from '../modules/BridgeController.js'
 import { RelayPort } from '../modules/RelayPort.js'
 import { envelope, sha256 } from '../modules/Protocol.js'
 
+test('local direct accepts Chinese filenames and keeps the original name in the envelope', async () => {
+  const previousFetch = globalThis.fetch
+  const previousWindow = globalThis.window
+  globalThis.window = { location: { origin: 'http://127.0.0.1:8000' }, addEventListener() {}, removeEventListener() {} }
+  const controller = new BridgeController({ context: { getRequestHeaders: () => ({}) } })
+  const messages = []
+  const file = new File(['example'], '中文人设与聊天'.repeat(50) + '.srlchat')
+  controller.createLocalDirectSession = async () => ({ sessionId: 'session_123456', token: 'a'.repeat(32), origin: 'http://127.0.0.1:8000', maxFileSize: 1024 })
+  controller.send = async (type, value) => messages.push({ type, ...value })
+  controller.sendFileChunks = async () => assert.fail('valid local upload must not fall back')
+  globalThis.fetch = async (_url, init) => {
+    const headers = new Headers(init.headers)
+    assert.equal(headers.has('X-SRL-File-Name'), false)
+    return Response.json({ size: file.size, sha256: await sha256(file) })
+  }
+  try {
+    await controller.sendFile(file, 'chat', 'request', '聊天', true)
+    assert.equal(messages[0].type, 'file-start')
+    assert.equal(messages[0].name, file.name)
+    assert.equal(messages[0].localDirectSession.sessionId, 'session_123456')
+    assert.equal(messages[1].type, 'file-end')
+  } finally { controller.destroy(); globalThis.fetch = previousFetch; globalThis.window = previousWindow }
+})
+
 test('reuses an unexpired device code, coalesces clicks and respects a disconnect during creation', async () => {
   const previousWindow = globalThis.window
   const previousFetch = globalThis.fetch

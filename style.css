@@ -24,6 +24,8 @@
 .srl-bridge-device-panel > span { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
 .srl-bridge-device-panel strong { font-family: ui-monospace, monospace; font-size: 1.5rem; letter-spacing: .12em; }
 .srl-bridge-device-panel p { margin: .4rem 0; font-size: .8rem; line-height: 1.5; }
+.srl-bridge-device-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+.srl-bridge-device-actions .menu_button { width: auto; flex: 1 0 auto; min-height: 44px; margin: 0; padding-inline: .75rem; white-space: nowrap; }
 .srl-bridge-local-pair-panel { display: grid; gap: .5rem; }
 .srl-bridge-local-pair-panel > span strong { font-family: inherit; font-size: 1rem; letter-spacing: normal; }
 #srl-bridge-local-pair-approve { width: 100%; min-height: 44px; white-space: nowrap; }
@@ -43,7 +45,7 @@
 .srl-bridge-activity > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .3rem; }
 .srl-bridge-activity header small { opacity: .6; }
 .srl-bridge-log { margin-block: .4rem; padding-left: 1.2rem; }
-.srl-bridge-log li { padding-block: .2rem; }
+.srl-bridge-log li { padding-block: .2rem; overflow-wrap: anywhere; }
 .srl-bridge-log:empty, .srl-bridge-log:not(:empty) + .srl-bridge-log-empty { display: none; }
 .srl-bridge-log-empty { margin-block: .4rem; opacity: .65; }
 .srl-bridge-parcel-body { display: grid; gap: .65rem; }
