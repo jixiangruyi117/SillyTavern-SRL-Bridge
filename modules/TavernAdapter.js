@@ -3,12 +3,12 @@ import {
   RESOURCE_KINDS,
   safeFileName,
   uniqueName,
-} from "./Protocol.js?v=0.3.42";
+} from "./Protocol.js?v=0.3.43";
 import {
   listChatResources,
   exportChatArchive,
   importChatRecord,
-} from "./TavernChatArchive.js?v=0.3.42";
+} from "./TavernChatArchive.js?v=0.3.43";
 
 function assertResponse(response, action) {
   if (response.ok) return response;

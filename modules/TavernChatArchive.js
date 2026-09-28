@@ -1,5 +1,5 @@
-import { createChatArchive } from "./ChatArchive.js?v=0.3.42";
-import { MAX_FILE_SIZE } from "./Protocol.js?v=0.3.42";
+import { createChatArchive } from "./ChatArchive.js?v=0.3.43";
+import { MAX_FILE_SIZE } from "./Protocol.js?v=0.3.43";
 
 function safeName(value) {
   return (

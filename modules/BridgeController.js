@@ -18,10 +18,10 @@ import {
   supportsGzip,
   gzipBlob,
   gunzipBlob,
-} from "./Protocol.js?v=0.3.42";
-import { RelayPort } from "./RelayPort.js?v=0.3.42";
-import { detectHostRuntime } from "./HostRuntime.js?v=0.3.42";
-import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.42";
+} from "./Protocol.js?v=0.3.43";
+import { RelayPort } from "./RelayPort.js?v=0.3.43";
+import { detectHostRuntime } from "./HostRuntime.js?v=0.3.43";
+import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.43";
 
 function isServerPluginRelayPath(value) {
   let pathname;
@@ -588,7 +588,10 @@ export class BridgeController extends EventTarget {
       } else if (message.type === "file-chunk-ack") {
         this.resolveChunkAck(message);
       } else if (message.type === "file-end") {
-        await this.finishIncoming(message);
+        // Integrity checking and resource import may take a long time. Keep them
+        // off the serialized message chain so cancel, catalog, and ACK messages
+        // can still be handled while the import is running.
+        this.runLongOperation(message, () => this.finishIncoming(message));
       } else if (message.type === "file-cancel") {
         const transferId = String(message.transferId ?? "");
         const transfer = this.incoming.get(transferId);

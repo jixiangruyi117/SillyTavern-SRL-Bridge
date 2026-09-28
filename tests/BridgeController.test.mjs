@@ -204,6 +204,77 @@ test("bounds simultaneous incoming transfers and rejects oversized chunks", asyn
   }
 });
 
+test("a slow file import does not block later bridge messages", async () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    location: { origin: "https://tavern.example" },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  let releaseImport;
+  let markImportStarted;
+  const importStarted = new Promise((resolve) => {
+    markImportStarted = resolve;
+  });
+  const controller = new BridgeController({
+    async importResource() {
+      markImportStarted();
+      return new Promise((resolve) => {
+        releaseImport = () => resolve({ status: "imported", name: "card" });
+      });
+    },
+    async listResources() {
+      return [];
+    },
+  });
+  const sent = [];
+  controller.send = async (type, payload) => sent.push({ type, ...payload });
+  const file = new File(["card data"], "card.json", { type: "application/json" });
+  try {
+    await controller.startIncoming({
+      direction: "to-tavern",
+      transferId: "slow-import",
+      requestId: "send-request",
+      name: file.name,
+      mimeType: file.type,
+      kind: "character",
+      conflictPolicy: "skip",
+      size: file.size,
+      sha256: await sha256(file),
+    });
+    controller.receiveChunk({
+      transferId: "slow-import",
+      index: 0,
+      data: await file.arrayBuffer(),
+    });
+
+    const deliver = (message) => {
+      controller.messageChain = controller.messageChain.then(() =>
+        controller.handlePortMessage(message),
+      );
+      return controller.messageChain;
+    };
+    await deliver(
+      envelope("file-end", {
+        requestId: "send-request",
+        transferId: "slow-import",
+      }),
+    );
+    await importStarted;
+    await deliver(envelope("list-request", { requestId: "later-list" }));
+
+    assert.ok(sent.some((message) => message.type === "list-response"));
+    assert.ok(!sent.some((message) => message.type === "file-result"));
+
+    releaseImport();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(sent.some((message) => message.type === "file-result"));
+  } finally {
+    controller.destroy();
+    globalThis.window = previousWindow;
+  }
+});
+
 test("file-cancel clears partial receive staging and rejects outstanding chunk waiters", async () => {
   const previousWindow = globalThis.window;
   globalThis.window = {

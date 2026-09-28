@@ -2,9 +2,9 @@ import {
   createParcel,
   readParcel,
   removeParcel,
-} from "./ParcelTransfer.js?v=0.3.42";
-import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.42";
-import { sha256 } from "./Protocol.js?v=0.3.42";
+} from "./ParcelTransfer.js?v=0.3.43";
+import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.43";
+import { sha256 } from "./Protocol.js?v=0.3.43";
 
 export function attachParcelPanel(controller, getBase) {
   const panel = document.getElementById("srl-bridge-parcels");

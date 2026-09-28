@@ -1,7 +1,7 @@
-import { BridgeController } from "./modules/BridgeController.js?v=0.3.42";
-import { TavernAdapter } from "./modules/TavernAdapter.js?v=0.3.42";
-import { waitForHostReady } from "./modules/HostRuntime.js?v=0.3.42";
-import { attachParcelPanel } from "./modules/ParcelPanel.js?v=0.3.42";
+import { BridgeController } from "./modules/BridgeController.js?v=0.3.43";
+import { TavernAdapter } from "./modules/TavernAdapter.js?v=0.3.43";
+import { waitForHostReady } from "./modules/HostRuntime.js?v=0.3.43";
+import { attachParcelPanel } from "./modules/ParcelPanel.js?v=0.3.43";
 
 const SETTINGS_KEY = "srl-bridge";
 let controller;
