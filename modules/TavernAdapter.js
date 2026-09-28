@@ -1,15 +1,28 @@
-import { MAX_FILE_SIZE, RESOURCE_KINDS, safeFileName, uniqueName } from './Protocol.js?v=0.3.37'
-import { listChatResources, exportChatArchive, importChatRecord } from './TavernChatArchive.js?v=0.3.37'
+import {
+  MAX_FILE_SIZE,
+  RESOURCE_KINDS,
+  safeFileName,
+  uniqueName,
+} from "./Protocol.js?v=0.3.42";
+import {
+  listChatResources,
+  exportChatArchive,
+  importChatRecord,
+} from "./TavernChatArchive.js?v=0.3.42";
 
 function assertResponse(response, action) {
-  if (response.ok) return response
-  throw new Error(`${action}失败（HTTP ${response.status}）`)
+  if (response.ok) return response;
+  throw new Error(`${action}失败（HTTP ${response.status}）`);
 }
 
 function jsonFile(data, name) {
-  return new File([JSON.stringify(data, null, 2)], `${safeFileName(name)}.json`, {
-    type: 'application/json',
-  })
+  return new File(
+    [JSON.stringify(data, null, 2)],
+    `${safeFileName(name)}.json`,
+    {
+      type: "application/json",
+    },
+  );
 }
 
 /**
@@ -19,50 +32,54 @@ function jsonFile(data, name) {
  * 预设   preset.extensions.tavern_helper.scripts
  * 树节点为 { type:'script', ... } 或 { type:'folder', scripts:[...] }。
  */
-const HELPER_FIELD = 'tavern_helper'
-const PRESET_DETAIL_CONCURRENCY = 4
+const HELPER_FIELD = "tavern_helper";
+const PRESET_DETAIL_CONCURRENCY = 4;
 
 async function mapWithConcurrency(items, concurrency, mapper) {
-  const results = new Array(items.length)
-  let nextIndex = 0
-  const workerCount = Math.min(Math.max(1, concurrency), items.length)
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
   const worker = async () => {
     while (true) {
-      const index = nextIndex++
-      if (index >= items.length) return
-      results[index] = await mapper(items[index], index)
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index], index);
     }
-  }
-  await Promise.all(Array.from({ length: workerCount }, worker))
-  return results
+  };
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
 }
 
 export function readHelperGlobalScripts(extensionSettings) {
-  const current = extensionSettings?.[HELPER_FIELD]?.script?.scripts
-  if (Array.isArray(current)) return current
-  const legacy = extensionSettings?.TavernHelper?.script?.scripts
-  return Array.isArray(legacy) ? legacy : []
+  const current = extensionSettings?.[HELPER_FIELD]?.script?.scripts;
+  if (Array.isArray(current)) return current;
+  const legacy = extensionSettings?.TavernHelper?.script?.scripts;
+  return Array.isArray(legacy) ? legacy : [];
 }
 
 export function readHelperCharacterScripts(character) {
-  const current = character?.data?.extensions?.[HELPER_FIELD]?.scripts
-  if (Array.isArray(current)) return current
-  const legacy = character?.data?.extensions?.TavernHelper_scripts
-  return Array.isArray(legacy) ? legacy : []
+  const current = character?.data?.extensions?.[HELPER_FIELD]?.scripts;
+  if (Array.isArray(current)) return current;
+  const legacy = character?.data?.extensions?.TavernHelper_scripts;
+  return Array.isArray(legacy) ? legacy : [];
 }
 
 export function readHelperPresetScripts(preset) {
-  const scripts = preset?.extensions?.[HELPER_FIELD]?.scripts
-  return Array.isArray(scripts) ? scripts : []
+  const scripts = preset?.extensions?.[HELPER_FIELD]?.scripts;
+  return Array.isArray(scripts) ? scripts : [];
 }
 
 export function countHelperScripts(trees) {
   return trees.reduce(
     (total, tree) =>
       total +
-      (tree?.type === 'folder' ? (Array.isArray(tree.scripts) ? tree.scripts.length : 0) : 1),
+      (tree?.type === "folder"
+        ? Array.isArray(tree.scripts)
+          ? tree.scripts.length
+          : 0
+        : 1),
     0,
-  )
+  );
 }
 
 /** 导入侧统一整形：接受树数组、单树、{scripts:[...]} 包裹或旧版纯脚本对象。 */
@@ -71,99 +88,151 @@ export function normalizeHelperScriptTrees(parsed) {
     ? parsed
     : Array.isArray(parsed?.scripts)
       ? parsed.scripts
-      : [parsed]
+      : [parsed];
   return rawTrees
-    .filter((tree) => tree && typeof tree === 'object')
+    .filter((tree) => tree && typeof tree === "object")
     .map((tree) => {
-      if (tree.type === 'folder' || tree.type === 'script') return structuredClone(tree)
+      if (tree.type === "folder" || tree.type === "script")
+        return structuredClone(tree);
       // 旧版纯脚本对象：包上 type
-      return { type: 'script', ...structuredClone(tree) }
+      return { type: "script", ...structuredClone(tree) };
     })
-    .filter((tree) => tree.type === 'folder' || typeof tree.content === 'string')
+    .filter(
+      (tree) => tree.type === "folder" || typeof tree.content === "string",
+    );
 }
 
 /** 导入的脚本一律换新 id 并整树停用：不与现有脚本撞 id，也绝不落地即运行。 */
 export function sanitizeImportedHelperTree(tree) {
-  const next = structuredClone(tree)
-  next.id = crypto.randomUUID()
-  next.enabled = false
-  if (next.type === 'folder' && Array.isArray(next.scripts)) {
+  const next = structuredClone(tree);
+  next.id = crypto.randomUUID();
+  next.enabled = false;
+  if (next.type === "folder" && Array.isArray(next.scripts)) {
     next.scripts = next.scripts.map((script) => ({
       ...structuredClone(script),
       id: crypto.randomUUID(),
       enabled: false,
-    }))
+    }));
   }
-  return next
+  return next;
+}
+
+function jsonSize(data) {
+  return new Blob([JSON.stringify(data, null, 2)]).size
+}
+
+async function addSourceFileSizes(context, items) {
+  if (!items.length) return
+  try {
+    const response = assertResponse(
+      await fetch("/api/plugins/srl-bridge/resource-sizes", {
+        method: "POST",
+        headers: context.getRequestHeaders(),
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            id: item.id,
+            kind: item.kind,
+            name: item.kind === RESOURCE_KINDS.CHARACTER ? item.fileName : item.name,
+          })),
+        }),
+        cache: "no-store",
+      }),
+      "读取酒馆资源大小",
+    )
+    const result = await response.json()
+    for (const item of items) {
+      const size = result?.sizes?.[item.id]
+      if (Number.isSafeInteger(size) && size >= 0) item.size = size
+    }
+  } catch {
+    // Older or non-SRL server plugins can still list resources without sizes.
+  }
 }
 
 function helperTreeName(tree, fallback) {
-  return safeFileName(typeof tree?.name === 'string' && tree.name.trim() ? tree.name : '', fallback)
+  return safeFileName(
+    typeof tree?.name === "string" && tree.name.trim() ? tree.name : "",
+    fallback,
+  );
 }
 
 function displayNameFromFile(file, fallback) {
-  return safeFileName(file.name.replace(/\.[^.]+$/u, ''), fallback)
+  return safeFileName(file.name.replace(/\.[^.]+$/u, ""), fallback);
 }
 
 export class TavernAdapter {
   constructor({ refreshPersonas } = {}) {
-    this.refreshPersonas = refreshPersonas
+    this.refreshPersonas = refreshPersonas;
   }
 
   get context() {
-    const context = window.SillyTavern?.getContext?.()
-    if (!context) throw new Error('SillyTavern 上下文尚未准备好')
-    return context
+    const context = window.SillyTavern?.getContext?.();
+    if (!context) throw new Error("SillyTavern 上下文尚未准备好");
+    return context;
   }
 
   async listResources(kind) {
-    const context = this.context
-    if (kind === 'chat') return listChatResources(context)
+    const context = this.context;
+    if (kind === "chat") return listChatResources(context);
     const personas = Object.entries(context.powerUserSettings?.personas ?? {})
-      .filter(([, name]) => typeof name === 'string')
+      .filter(([, name]) => typeof name === "string")
       .map(([avatarId, name]) => ({
         id: `userPersona:${avatarId}`,
         kind: RESOURCE_KINDS.USER_PERSONA,
         name,
-        fileName: `persona-${safeFileName(avatarId.replace(/\.png$/i, ''))}.json`,
-        detail: context.powerUserSettings?.persona_descriptions?.[avatarId]?.title || '用户人设',
-      }))
+        fileName: `persona-${safeFileName(avatarId.replace(/\.png$/i, ""))}.json`,
+        detail:
+          context.powerUserSettings?.persona_descriptions?.[avatarId]?.title ||
+          "用户人设",
+        size: jsonSize({
+          personas: { [avatarId]: name },
+          persona_descriptions: {
+            [avatarId]: context.powerUserSettings?.persona_descriptions?.[avatarId] ?? {},
+          },
+          ...(context.powerUserSettings?.default_persona === avatarId
+            ? { default_persona: avatarId }
+            : {}),
+        }),
+      }));
     const characters = context.characters.map((character) => ({
       id: `character:${character.avatar}`,
       kind: RESOURCE_KINDS.CHARACTER,
-      name: character.name || character.avatar.replace(/\.png$/i, ''),
+      name: character.name || character.avatar.replace(/\.png$/i, ""),
       fileName: character.avatar,
-      detail: character.data?.creator || character.creator || '',
-    }))
+      detail: character.data?.creator || character.creator || "",
+    }));
     const worldBooks = context.getWorldInfoNames().map((name) => ({
       id: `worldBook:${name}`,
       kind: RESOURCE_KINDS.WORLD_BOOK,
       name,
       fileName: `${name}.json`,
-      detail: '世界书',
-    }))
-    const presetManager = await context.getPresetManager()
-    const presetNames = (await presetManager?.getAllPresets?.()) ?? []
+      detail: "世界书",
+    }));
+    const presetManager = await context.getPresetManager();
+    const presetNames = (await presetManager?.getAllPresets?.()) ?? [];
     const presets = presetNames.map((name) => ({
       id: `preset:${name}`,
       kind: RESOURCE_KINDS.PRESET,
       name,
       fileName: `${name}.json`,
-      detail: '当前 API 类型的预设',
-    }))
+      detail: "当前 API 类型的预设",
+    }));
     const globalRegexes = (
-      Array.isArray(context.extensionSettings?.regex) ? context.extensionSettings.regex : []
+      Array.isArray(context.extensionSettings?.regex)
+        ? context.extensionSettings.regex
+        : []
     ).map((script, index) => ({
       id: `regexGlobal:${script.id || index}`,
       kind: RESOURCE_KINDS.REGEX_GLOBAL,
       name: script.scriptName || `正则 ${index + 1}`,
       fileName: `${safeFileName(script.scriptName || `regex-${index + 1}`)}.json`,
-      detail: '全局正则',
-    }))
+      detail: "全局正则",
+      size: jsonSize({ global: [script], sourceName: script.scriptName || `正则 ${index + 1}` }),
+    }));
     const characterRegexes = context.characters.flatMap((character) => {
-      const scripts = character.data?.extensions?.regex_scripts
-      if (!Array.isArray(scripts) || !scripts.length) return []
-      const name = character.name || character.avatar.replace(/\.png$/i, '')
+      const scripts = character.data?.extensions?.regex_scripts;
+      if (!Array.isArray(scripts) || !scripts.length) return [];
+      const name = character.name || character.avatar.replace(/\.png$/i, "");
       return [
         {
           id: `regexCharacter:${character.avatar}`,
@@ -171,55 +240,74 @@ export class TavernAdapter {
           name: `${name} · 角色卡正则`,
           fileName: `${safeFileName(name)} · 角色卡正则.json`,
           detail: `${scripts.length} 条 · 绑定角色卡`,
+          size: jsonSize({
+            scoped: scripts,
+            sourceName: character.name || character.avatar,
+            sourceAvatar: character.avatar,
+          }),
         },
-      ]
-    })
+      ];
+    });
     const presetDetails = new Map(
-      await mapWithConcurrency(presets, PRESET_DETAIL_CONCURRENCY, async (preset) => [
-        preset.name,
-        await presetManager?.getCompletionPresetByName?.(preset.name),
-      ]),
-    )
+      await mapWithConcurrency(
+        presets,
+        PRESET_DETAIL_CONCURRENCY,
+        async (preset) => [
+          preset.name,
+          await presetManager?.getCompletionPresetByName?.(preset.name),
+        ],
+      ),
+    );
+    for (const preset of presets) {
+      const data = presetDetails.get(preset.name)
+      if (data) preset.size = jsonSize(data)
+    }
     const presetRegexes = presets
       .map((preset) => {
-        const data = presetDetails.get(preset.name)
-        const scripts = data?.extensions?.regex_scripts
-        if (!Array.isArray(scripts) || !scripts.length) return undefined
+        const data = presetDetails.get(preset.name);
+        const scripts = data?.extensions?.regex_scripts;
+        if (!Array.isArray(scripts) || !scripts.length) return undefined;
         return {
           id: `regexPreset:${preset.name}`,
           kind: RESOURCE_KINDS.REGEX_PRESET,
           name: `${preset.name} · 预设正则`,
           fileName: `${safeFileName(preset.name)} · 预设正则.json`,
           detail: `${scripts.length} 条 · 绑定预设`,
-        }
+          size: jsonSize({ preset: scripts, sourceName: preset.name }),
+        };
       })
-      .filter(Boolean)
-    const quickReplyApi = globalThis.quickReplyApi
+      .filter(Boolean);
+    const quickReplyApi = globalThis.quickReplyApi;
     const quickReplies = quickReplyApi
-      ? quickReplyApi.listSets().map((name) => ({
-          id: `quickReply:${name}`,
-          kind: RESOURCE_KINDS.QUICK_REPLY,
-          name,
-          fileName: `${safeFileName(name)}.json`,
-          detail: '快速回复组',
-        }))
-      : []
-    const helperGlobalScripts = readHelperGlobalScripts(context.extensionSettings).map(
-      (tree, index) => ({
-        id: `scriptGlobal:${tree?.id || index}`,
-        kind: RESOURCE_KINDS.SCRIPT_GLOBAL,
-        name: helperTreeName(tree, `脚本 ${index + 1}`),
-        fileName: `${helperTreeName(tree, `脚本 ${index + 1}`)}.json`,
-        detail:
-          tree?.type === 'folder'
-            ? `脚本文件夹 · ${Array.isArray(tree.scripts) ? tree.scripts.length : 0} 个脚本`
-            : '酒馆助手脚本',
-      }),
-    )
+      ? quickReplyApi.listSets().map((name) => {
+          const data = quickReplyApi.getSetByName?.(name)?.toJSON?.()
+          return {
+            id: `quickReply:${name}`,
+            kind: RESOURCE_KINDS.QUICK_REPLY,
+            name,
+            fileName: `${safeFileName(name)}.json`,
+            detail: "快速回复组",
+            ...(data === undefined ? {} : { size: jsonSize(data) }),
+          }
+        })
+      : [];
+    const helperGlobalScripts = readHelperGlobalScripts(
+      context.extensionSettings,
+    ).map((tree, index) => ({
+      id: `scriptGlobal:${tree?.id || index}`,
+      kind: RESOURCE_KINDS.SCRIPT_GLOBAL,
+      name: helperTreeName(tree, `脚本 ${index + 1}`),
+      fileName: `${helperTreeName(tree, `脚本 ${index + 1}`)}.json`,
+      detail:
+        tree?.type === "folder"
+          ? `脚本文件夹 · ${Array.isArray(tree.scripts) ? tree.scripts.length : 0} 个脚本`
+          : "酒馆助手脚本",
+      size: jsonSize(tree),
+    }));
     const helperCharacterScripts = context.characters.flatMap((character) => {
-      const scripts = readHelperCharacterScripts(character)
-      if (!scripts.length) return []
-      const name = character.name || character.avatar.replace(/\.png$/i, '')
+      const scripts = readHelperCharacterScripts(character);
+      if (!scripts.length) return [];
+      const name = character.name || character.avatar.replace(/\.png$/i, "");
       return [
         {
           id: `scriptCharacter:${character.avatar}`,
@@ -227,23 +315,29 @@ export class TavernAdapter {
           name: `${name} · 酒馆助手脚本`,
           fileName: `${safeFileName(name)} · 酒馆助手脚本.json`,
           detail: `${countHelperScripts(scripts)} 个脚本 · 绑定角色卡`,
+          size: jsonSize({
+            scripts,
+            sourceName: character.name || character.avatar,
+            sourceAvatar: character.avatar,
+          }),
         },
-      ]
-    })
+      ];
+    });
     const helperPresetScripts = presets
       .map((preset) => {
-        const scripts = readHelperPresetScripts(presetDetails.get(preset.name))
-        if (!scripts.length) return undefined
+        const scripts = readHelperPresetScripts(presetDetails.get(preset.name));
+        if (!scripts.length) return undefined;
         return {
           id: `scriptPreset:${preset.name}`,
           kind: RESOURCE_KINDS.SCRIPT_PRESET,
           name: `${preset.name} · 酒馆助手脚本`,
           fileName: `${safeFileName(preset.name)} · 酒馆助手脚本.json`,
           detail: `${countHelperScripts(scripts)} 个脚本 · 绑定预设`,
-        }
+          size: jsonSize({ scripts, sourceName: preset.name }),
+        };
       })
-      .filter(Boolean)
-    let themes = []
+      .filter(Boolean);
+    let themes = [];
     try {
       themes =
         (await this.getSettingsData()).themes?.map((theme) => ({
@@ -251,11 +345,13 @@ export class TavernAdapter {
           kind: RESOURCE_KINDS.THEME,
           name: theme.name,
           fileName: `${safeFileName(theme.name)}.json`,
-          detail: '酒馆主题',
-        })) ?? []
+          detail: "酒馆主题",
+          size: jsonSize(theme),
+        })) ?? [];
     } catch {
       // Older SillyTavern builds may not expose themes in settings/get.
     }
+    await addSourceFileSizes(context, [...characters, ...worldBooks])
     return [
       ...personas,
       ...characters,
@@ -269,34 +365,42 @@ export class TavernAdapter {
       ...helperCharacterScripts,
       ...helperPresetScripts,
       ...themes,
-    ]
+    ];
   }
 
   async getSettingsData() {
     const response = assertResponse(
-      await fetch('/api/settings/get', {
-        method: 'POST',
+      await fetch("/api/settings/get", {
+        method: "POST",
         headers: this.context.getRequestHeaders(),
         body: JSON.stringify({}),
-        cache: 'no-cache',
+        cache: "no-cache",
       }),
-      '读取酒馆设置',
-    )
-    return response.json()
+      "读取酒馆设置",
+    );
+    return response.json();
   }
 
-  async exportResource(item) {
-    const context = this.context
+  async exportResource(item, { signal } = {}) {
+    const context = this.context;
     if (item.kind === RESOURCE_KINDS.CHAT)
-      return exportChatArchive(context, item, (card) => this.exportResource(card))
+      return exportChatArchive(
+        context,
+        item,
+        (card) => this.exportResource(card, { signal }),
+        { signal },
+      );
     if (item.kind === RESOURCE_KINDS.USER_PERSONA) {
-      const avatarId = item.id.slice('userPersona:'.length)
-      const settings = context.powerUserSettings
+      const avatarId = item.id.slice("userPersona:".length);
+      const settings = context.powerUserSettings;
       if (
-        !Object.prototype.hasOwnProperty.call(settings?.personas ?? {}, avatarId) ||
-        typeof settings.personas[avatarId] !== 'string'
+        !Object.prototype.hasOwnProperty.call(
+          settings?.personas ?? {},
+          avatarId,
+        ) ||
+        typeof settings.personas[avatarId] !== "string"
       ) {
-        throw new Error(`找不到用户人设“${item.name}”`)
+        throw new Error(`找不到用户人设“${item.name}”`);
       }
       return jsonFile(
         {
@@ -304,643 +408,813 @@ export class TavernAdapter {
           persona_descriptions: {
             [avatarId]: settings.persona_descriptions?.[avatarId] ?? {},
           },
-          ...(settings.default_persona === avatarId ? { default_persona: avatarId } : {}),
+          ...(settings.default_persona === avatarId
+            ? { default_persona: avatarId }
+            : {}),
         },
-        `persona-${safeFileName(avatarId.replace(/\.png$/i, ''))}`,
-      )
+        `persona-${safeFileName(avatarId.replace(/\.png$/i, ""))}`,
+      );
     }
     if (item.kind === RESOURCE_KINDS.CHARACTER) {
-      const avatar = item.id.slice('character:'.length)
+      const avatar = item.id.slice("character:".length);
       const response = assertResponse(
-        await fetch('/api/characters/export', {
-          method: 'POST',
+        await fetch("/api/characters/export", {
+          method: "POST",
           headers: context.getRequestHeaders(),
-          body: JSON.stringify({ format: 'png', avatar_url: avatar }),
+          body: JSON.stringify({ format: "png", avatar_url: avatar }),
+          signal,
         }),
-        '导出角色卡',
-      )
-      return new File([await response.blob()], avatar, { type: 'image/png' })
+        "导出角色卡",
+      );
+      return new File([await response.blob()], avatar, { type: "image/png" });
     }
     if (item.kind === RESOURCE_KINDS.WORLD_BOOK) {
-      const name = item.id.slice('worldBook:'.length)
+      const name = item.id.slice("worldBook:".length);
       const response = assertResponse(
-        await fetch('/api/worldinfo/get', {
-          method: 'POST',
+        await fetch("/api/worldinfo/get", {
+          method: "POST",
           headers: context.getRequestHeaders(),
           body: JSON.stringify({ name }),
-          cache: 'no-cache',
+          cache: "no-cache",
+          signal,
         }),
-        '导出世界书',
-      )
-      return jsonFile(await response.json(), name)
+        "导出世界书",
+      );
+      return jsonFile(await response.json(), name);
     }
     if (item.kind === RESOURCE_KINDS.PRESET) {
-      const name = item.id.slice('preset:'.length)
-      const manager = await context.getPresetManager()
-      const preset = await manager?.getCompletionPresetByName?.(name)
-      if (!preset) throw new Error(`找不到预设“${name}”`)
-      return jsonFile(preset, name)
+      const name = item.id.slice("preset:".length);
+      const manager = await context.getPresetManager();
+      const preset = await manager?.getCompletionPresetByName?.(name);
+      if (!preset) throw new Error(`找不到预设“${name}”`);
+      return jsonFile(preset, name);
     }
     if (item.kind === RESOURCE_KINDS.REGEX_GLOBAL) {
-      const key = item.id.slice('regexGlobal:'.length)
+      const key = item.id.slice("regexGlobal:".length);
       const scripts = Array.isArray(context.extensionSettings?.regex)
         ? context.extensionSettings.regex
-        : []
-      const script = scripts.find((entry, index) => String(entry.id || index) === key)
-      if (!script) throw new Error(`找不到正则“${item.name}”`)
-      return jsonFile({ global: [script], sourceName: script.scriptName || item.name }, script.scriptName || item.name)
+        : [];
+      const script = scripts.find(
+        (entry, index) => String(entry.id || index) === key,
+      );
+      if (!script) throw new Error(`找不到正则“${item.name}”`);
+      return jsonFile(
+        { global: [script], sourceName: script.scriptName || item.name },
+        script.scriptName || item.name,
+      );
     }
     if (item.kind === RESOURCE_KINDS.REGEX_CHARACTER) {
-      const avatar = item.id.slice('regexCharacter:'.length)
-      const character = context.characters.find((entry) => entry.avatar === avatar)
-      const scripts = character?.data?.extensions?.regex_scripts
-      if (!character || !Array.isArray(scripts)) throw new Error(`找不到角色卡正则“${item.name}”`)
+      const avatar = item.id.slice("regexCharacter:".length);
+      const character = context.characters.find(
+        (entry) => entry.avatar === avatar,
+      );
+      const scripts = character?.data?.extensions?.regex_scripts;
+      if (!character || !Array.isArray(scripts))
+        throw new Error(`找不到角色卡正则“${item.name}”`);
       return jsonFile(
         {
           scoped: scripts,
           sourceName: character.name || avatar,
           sourceAvatar: avatar,
         },
-        item.fileName.replace(/\.json$/i, ''),
-      )
+        item.fileName.replace(/\.json$/i, ""),
+      );
     }
     if (item.kind === RESOURCE_KINDS.REGEX_PRESET) {
-      const name = item.id.slice('regexPreset:'.length)
-      const manager = await context.getPresetManager()
-      const preset = await manager?.getCompletionPresetByName?.(name)
-      const scripts = preset?.extensions?.regex_scripts
-      if (!preset || !Array.isArray(scripts)) throw new Error(`找不到预设正则“${item.name}”`)
-      return jsonFile({ preset: scripts, sourceName: name }, item.fileName.replace(/\.json$/i, ''))
+      const name = item.id.slice("regexPreset:".length);
+      const manager = await context.getPresetManager();
+      const preset = await manager?.getCompletionPresetByName?.(name);
+      const scripts = preset?.extensions?.regex_scripts;
+      if (!preset || !Array.isArray(scripts))
+        throw new Error(`找不到预设正则“${item.name}”`);
+      return jsonFile(
+        { preset: scripts, sourceName: name },
+        item.fileName.replace(/\.json$/i, ""),
+      );
     }
     if (item.kind === RESOURCE_KINDS.QUICK_REPLY) {
-      const name = item.id.slice('quickReply:'.length)
-      const set = globalThis.quickReplyApi?.getSetByName(name)
-      if (!set) throw new Error(`找不到快速回复组“${name}”`)
-      return jsonFile(set.toJSON(), name)
+      const name = item.id.slice("quickReply:".length);
+      const set = globalThis.quickReplyApi?.getSetByName(name);
+      if (!set) throw new Error(`找不到快速回复组“${name}”`);
+      return jsonFile(set.toJSON(), name);
     }
     if (item.kind === RESOURCE_KINDS.SCRIPT_GLOBAL) {
-      const key = item.id.slice('scriptGlobal:'.length)
-      const trees = readHelperGlobalScripts(this.context.extensionSettings)
-      const tree = trees.find((entry, index) => String(entry?.id || index) === key)
-      if (!tree) throw new Error(`找不到脚本“${item.name}”`)
-      return jsonFile(tree, item.fileName.replace(/\.json$/i, ''))
+      const key = item.id.slice("scriptGlobal:".length);
+      const trees = readHelperGlobalScripts(this.context.extensionSettings);
+      const tree = trees.find(
+        (entry, index) => String(entry?.id || index) === key,
+      );
+      if (!tree) throw new Error(`找不到脚本“${item.name}”`);
+      return jsonFile(tree, item.fileName.replace(/\.json$/i, ""));
     }
     if (item.kind === RESOURCE_KINDS.SCRIPT_CHARACTER) {
-      const avatar = item.id.slice('scriptCharacter:'.length)
-      const character = this.context.characters.find((entry) => entry.avatar === avatar)
-      const scripts = character ? readHelperCharacterScripts(character) : []
-      if (!character || !scripts.length) throw new Error(`找不到角色卡脚本“${item.name}”`)
+      const avatar = item.id.slice("scriptCharacter:".length);
+      const character = this.context.characters.find(
+        (entry) => entry.avatar === avatar,
+      );
+      const scripts = character ? readHelperCharacterScripts(character) : [];
+      if (!character || !scripts.length)
+        throw new Error(`找不到角色卡脚本“${item.name}”`);
       return jsonFile(
         { scripts, sourceName: character.name || avatar, sourceAvatar: avatar },
-        item.fileName.replace(/\.json$/i, ''),
-      )
+        item.fileName.replace(/\.json$/i, ""),
+      );
     }
     if (item.kind === RESOURCE_KINDS.SCRIPT_PRESET) {
-      const name = item.id.slice('scriptPreset:'.length)
-      const manager = await this.context.getPresetManager()
-      const preset = await manager?.getCompletionPresetByName?.(name)
-      const scripts = readHelperPresetScripts(preset)
-      if (!preset || !scripts.length) throw new Error(`找不到预设脚本“${item.name}”`)
-      return jsonFile({ scripts, sourceName: name }, item.fileName.replace(/\.json$/i, ''))
+      const name = item.id.slice("scriptPreset:".length);
+      const manager = await this.context.getPresetManager();
+      const preset = await manager?.getCompletionPresetByName?.(name);
+      const scripts = readHelperPresetScripts(preset);
+      if (!preset || !scripts.length)
+        throw new Error(`找不到预设脚本“${item.name}”`);
+      return jsonFile(
+        { scripts, sourceName: name },
+        item.fileName.replace(/\.json$/i, ""),
+      );
     }
     if (item.kind === RESOURCE_KINDS.THEME) {
-      const name = item.id.slice('theme:'.length)
-      const theme = (await this.getSettingsData()).themes?.find((entry) => entry.name === name)
-      if (!theme) throw new Error(`找不到主题“${name}”`)
-      return jsonFile(theme, name)
+      const name = item.id.slice("theme:".length);
+      const theme = (await this.getSettingsData()).themes?.find(
+        (entry) => entry.name === name,
+      );
+      if (!theme) throw new Error(`找不到主题“${name}”`);
+      return jsonFile(theme, name);
     }
-    throw new Error('暂不支持这种资源类型')
+    throw new Error("暂不支持这种资源类型");
   }
 
-  async importResource(file, kind, conflictPolicy = 'copy', metadata = {}) {
-    if (file.size > MAX_FILE_SIZE) throw new Error('单个文件超过 256 MB，已停止导入')
-    if (kind === RESOURCE_KINDS.CHAT) return importChatRecord(this.context, file, metadata.targetName)
-    if (kind === RESOURCE_KINDS.CHARACTER) return this.importCharacter(file, conflictPolicy)
-    if (kind === RESOURCE_KINDS.WORLD_BOOK) return this.importWorldBook(file, conflictPolicy)
-    if (kind === RESOURCE_KINDS.PRESET) return this.importPreset(file, conflictPolicy)
-    if (kind === RESOURCE_KINDS.REGEX_GLOBAL) return this.importRegex(file, conflictPolicy)
+  async importResource(file, kind, conflictPolicy = "copy", metadata = {}) {
+    if (file.size > MAX_FILE_SIZE)
+      throw new Error("单个文件超过 256 MB，已停止导入");
+    if (kind === RESOURCE_KINDS.CHAT)
+      return importChatRecord(this.context, file, metadata.targetName);
+    if (kind === RESOURCE_KINDS.CHARACTER)
+      return this.importCharacter(file, conflictPolicy);
+    if (kind === RESOURCE_KINDS.WORLD_BOOK)
+      return this.importWorldBook(file, conflictPolicy);
+    if (kind === RESOURCE_KINDS.PRESET)
+      return this.importPreset(file, conflictPolicy);
+    if (kind === RESOURCE_KINDS.REGEX_GLOBAL)
+      return this.importRegex(file, conflictPolicy);
     if (kind === RESOURCE_KINDS.REGEX_CHARACTER) {
-      return this.importScopedRegex(file, conflictPolicy, metadata.targetName)
+      return this.importScopedRegex(file, conflictPolicy, metadata.targetName);
     }
     if (kind === RESOURCE_KINDS.REGEX_PRESET) {
-      return this.importPresetRegex(file, conflictPolicy, metadata.targetName)
+      return this.importPresetRegex(file, conflictPolicy, metadata.targetName);
     }
-    if (kind === RESOURCE_KINDS.QUICK_REPLY) return this.importQuickReply(file, conflictPolicy)
-    if (kind === RESOURCE_KINDS.SCRIPT_GLOBAL) return this.importGlobalScript(file, conflictPolicy)
+    if (kind === RESOURCE_KINDS.QUICK_REPLY)
+      return this.importQuickReply(file, conflictPolicy);
+    if (kind === RESOURCE_KINDS.SCRIPT_GLOBAL)
+      return this.importGlobalScript(file, conflictPolicy);
     if (kind === RESOURCE_KINDS.SCRIPT_CHARACTER) {
-      return this.importCharacterScript(file, conflictPolicy, metadata.targetName)
+      return this.importCharacterScript(
+        file,
+        conflictPolicy,
+        metadata.targetName,
+      );
     }
     if (kind === RESOURCE_KINDS.SCRIPT_PRESET) {
-      return this.importPresetScript(file, conflictPolicy, metadata.targetName)
+      return this.importPresetScript(file, conflictPolicy, metadata.targetName);
     }
     if (kind === RESOURCE_KINDS.USER_AVATAR) {
-      return this.importUserAvatar(file, metadata.targetName, conflictPolicy)
+      return this.importUserAvatar(file, metadata.targetName, conflictPolicy);
     }
-    if (kind === RESOURCE_KINDS.USER_PERSONA) return this.importUserPersona(file, conflictPolicy)
-    if (kind === RESOURCE_KINDS.THEME) return this.importTheme(file, conflictPolicy)
-    throw new Error('酒馆端暂不支持这种资源类型')
+    if (kind === RESOURCE_KINDS.USER_PERSONA)
+      return this.importUserPersona(file, conflictPolicy);
+    if (kind === RESOURCE_KINDS.THEME)
+      return this.importTheme(file, conflictPolicy);
+    throw new Error("酒馆端暂不支持这种资源类型");
   }
 
   async importCharacter(file, conflictPolicy) {
-    const context = this.context
-    const baseName = file.name.replace(/\.[^.]+$/u, '')
+    const context = this.context;
+    const baseName = file.name.replace(/\.[^.]+$/u, "");
     const existing = context.characters.find(
       (character) =>
         character.name?.toLocaleLowerCase() === baseName.toLocaleLowerCase() ||
-        character.avatar?.replace(/\.png$/i, '').toLocaleLowerCase() ===
+        character.avatar?.replace(/\.png$/i, "").toLocaleLowerCase() ===
           baseName.toLocaleLowerCase(),
-    )
-    if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: baseName }
-    const format = file.name.split('.').pop()?.toLocaleLowerCase()
-    if (!format || !['png', 'json'].includes(format)) throw new Error('角色卡只支持 PNG 或 JSON')
-    const form = new FormData()
-    form.append('avatar', file)
-    form.append('file_type', format)
-    form.append('user_name', context.name1)
-    if (existing && conflictPolicy === 'overwrite') form.append('preserved_name', existing.avatar)
+    );
+    if (existing && conflictPolicy === "skip")
+      return { status: "skipped", name: baseName };
+    const format = file.name.split(".").pop()?.toLocaleLowerCase();
+    if (!format || !["png", "json"].includes(format))
+      throw new Error("角色卡只支持 PNG 或 JSON");
+    const form = new FormData();
+    form.append("avatar", file);
+    form.append("file_type", format);
+    form.append("user_name", context.name1);
+    if (existing && conflictPolicy === "overwrite")
+      form.append("preserved_name", existing.avatar);
     const response = assertResponse(
-      await fetch('/api/characters/import', {
-        method: 'POST',
+      await fetch("/api/characters/import", {
+        method: "POST",
         body: form,
         headers: context.getRequestHeaders({ omitContentType: true }),
-        cache: 'no-cache',
+        cache: "no-cache",
       }),
-      '导入角色卡',
-    )
-    const result = await response.json()
-    if (result.error) throw new Error('酒馆拒绝了角色卡文件')
-    await context.getCharacters?.()
+      "导入角色卡",
+    );
+    const result = await response.json();
+    if (result.error) throw new Error("酒馆拒绝了角色卡文件");
+    await context.getCharacters?.();
     return {
-      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing && conflictPolicy === "overwrite" ? "overwritten" : "created",
       name: result.file_name,
-    }
+    };
   }
 
   async listUserAvatarIds() {
     const response = assertResponse(
-      await fetch('/api/avatars/get', {
-        method: 'POST',
+      await fetch("/api/avatars/get", {
+        method: "POST",
         headers: this.context.getRequestHeaders({ omitContentType: true }),
       }),
-      '读取酒馆用户头像',
-    )
-    const avatars = await response.json()
-    if (!Array.isArray(avatars) || !avatars.every((id) => typeof id === 'string')) {
-      throw new Error('酒馆用户头像列表格式异常')
+      "读取酒馆用户头像",
+    );
+    const avatars = await response.json();
+    if (
+      !Array.isArray(avatars) ||
+      !avatars.every((id) => typeof id === "string")
+    ) {
+      throw new Error("酒馆用户头像列表格式异常");
     }
-    return avatars
+    return avatars;
   }
 
-  async importUserAvatar(file, targetName, conflictPolicy = 'overwrite') {
-    const context = this.context
-    const avatarId = safeFileName(targetName || file.name, 'persona.png')
-    if (!/\.png$/i.test(avatarId)) throw new Error('用户头像必须使用 PNG 文件名')
-    const exists = (await this.listUserAvatarIds()).includes(avatarId)
-    if (exists && conflictPolicy === 'skip') return { status: 'skipped', name: avatarId }
-    if (exists && conflictPolicy === 'copy') {
-      throw new Error('用户头像不能按同名创建副本；请选择跳过或明确覆盖')
+  async importUserAvatar(file, targetName, conflictPolicy = "overwrite") {
+    const context = this.context;
+    const avatarId = safeFileName(targetName || file.name, "persona.png");
+    if (!/\.png$/i.test(avatarId))
+      throw new Error("用户头像必须使用 PNG 文件名");
+    const exists = (await this.listUserAvatarIds()).includes(avatarId);
+    if (exists && conflictPolicy === "skip")
+      return { status: "skipped", name: avatarId };
+    if (exists && conflictPolicy === "copy") {
+      throw new Error("用户头像不能按同名创建副本；请选择跳过或明确覆盖");
     }
-    const form = new FormData()
-    form.append('avatar', file, avatarId)
-    form.append('overwrite_name', avatarId)
+    const form = new FormData();
+    form.append("avatar", file, avatarId);
+    form.append("overwrite_name", avatarId);
     await assertResponse(
-      await fetch('/api/avatars/upload', {
-        method: 'POST',
+      await fetch("/api/avatars/upload", {
+        method: "POST",
         headers: context.getRequestHeaders({ omitContentType: true }),
         body: form,
-        cache: 'no-cache',
+        cache: "no-cache",
       }),
-      '上传用户头像',
-    )
-    return { status: exists ? 'overwritten' : 'created', name: avatarId }
+      "上传用户头像",
+    );
+    return { status: exists ? "overwritten" : "created", name: avatarId };
   }
 
   async importUserPersona(file, conflictPolicy) {
-    const context = this.context
-    const parsed = JSON.parse(await file.text())
+    const context = this.context;
+    const parsed = JSON.parse(await file.text());
     if (
       !parsed ||
-      typeof parsed !== 'object' ||
+      typeof parsed !== "object" ||
       Array.isArray(parsed) ||
       !parsed.personas ||
-      typeof parsed.personas !== 'object' ||
+      typeof parsed.personas !== "object" ||
       !parsed.persona_descriptions ||
-      typeof parsed.persona_descriptions !== 'object'
+      typeof parsed.persona_descriptions !== "object"
     ) {
-      throw new Error('用户人设 JSON 缺少 personas 或 persona_descriptions')
+      throw new Error("用户人设 JSON 缺少 personas 或 persona_descriptions");
     }
-    const powerUser = context.powerUserSettings
-    if (!powerUser || typeof powerUser !== 'object')
-      throw new Error('当前酒馆未公开 powerUserSettings')
+    const powerUser = context.powerUserSettings;
+    if (!powerUser || typeof powerUser !== "object")
+      throw new Error("当前酒馆未公开 powerUserSettings");
     const entries = Object.entries(parsed.personas).filter(
-      ([avatarId, name]) => avatarId && typeof name === 'string',
-    )
+      ([avatarId, name]) => avatarId && typeof name === "string",
+    );
     // Reject a conflicting batch before changing any persona, including earlier non-conflicting entries.
     if (
-      conflictPolicy === 'copy' &&
-      entries.some(([id]) => Object.prototype.hasOwnProperty.call(powerUser.personas ?? {}, id))
+      conflictPolicy === "copy" &&
+      entries.some(([id]) =>
+        Object.prototype.hasOwnProperty.call(powerUser.personas ?? {}, id),
+      )
     ) {
-      throw new Error('用户人设直传暂不支持“保留两份”；请改用覆盖或跳过，避免头像键与图片错配')
+      throw new Error(
+        "用户人设直传暂不支持“保留两份”；请改用覆盖或跳过，避免头像键与图片错配",
+      );
     }
     const selected = entries.filter(
       ([id]) =>
-        conflictPolicy !== 'skip' ||
+        conflictPolicy !== "skip" ||
         !Object.prototype.hasOwnProperty.call(powerUser.personas ?? {}, id),
-    )
-    if (!selected.length) return { status: 'skipped', name: file.name }
-    await this.ensurePersonaAvatars(selected.map(([id]) => id))
-    powerUser.personas ||= {}
-    powerUser.persona_descriptions ||= {}
-    let applied = 0
+    );
+    if (!selected.length) return { status: "skipped", name: file.name };
+    await this.ensurePersonaAvatars(selected.map(([id]) => id));
+    powerUser.personas ||= {};
+    powerUser.persona_descriptions ||= {};
+    let applied = 0;
     for (const [avatarId, name] of selected) {
-      if (typeof name !== 'string' || !avatarId) continue
-      const exists = Object.prototype.hasOwnProperty.call(powerUser.personas, avatarId)
-      if (exists && conflictPolicy === 'skip') continue
-      if (exists && conflictPolicy === 'copy') {
-        throw new Error('用户人设直传暂不支持“保留两份”；请改用覆盖或跳过，避免头像键与图片错配')
+      if (typeof name !== "string" || !avatarId) continue;
+      const exists = Object.prototype.hasOwnProperty.call(
+        powerUser.personas,
+        avatarId,
+      );
+      if (exists && conflictPolicy === "skip") continue;
+      if (exists && conflictPolicy === "copy") {
+        throw new Error(
+          "用户人设直传暂不支持“保留两份”；请改用覆盖或跳过，避免头像键与图片错配",
+        );
       }
-      powerUser.personas[avatarId] = name
+      powerUser.personas[avatarId] = name;
       powerUser.persona_descriptions[avatarId] = structuredClone(
         parsed.persona_descriptions[avatarId] || {},
-      )
-      applied += 1
+      );
+      applied += 1;
     }
-    if (!applied) return { status: 'skipped', name: file.name }
+    if (!applied) return { status: "skipped", name: file.name };
     if (
-      typeof parsed.default_persona === 'string' &&
-      Object.prototype.hasOwnProperty.call(powerUser.personas, parsed.default_persona)
+      typeof parsed.default_persona === "string" &&
+      Object.prototype.hasOwnProperty.call(
+        powerUser.personas,
+        parsed.default_persona,
+      )
     ) {
-      powerUser.default_persona = parsed.default_persona
+      powerUser.default_persona = parsed.default_persona;
     }
-    context.saveSettingsDebounced()
+    context.saveSettingsDebounced();
     try {
-      await this.refreshPersonas?.()
+      await this.refreshPersonas?.();
     } catch (error) {
       // The import is already saved; a UI refresh failure must not invite an accidental resend.
-      console.warn('SRL Bridge: 人设已导入，但酒馆列表未能立即刷新', error)
+      console.warn("SRL Bridge: 人设已导入，但酒馆列表未能立即刷新", error);
     }
-    return { status: 'created', name: `${applied} 个人设` }
+    return { status: "created", name: `${applied} 个人设` };
   }
 
   async ensurePersonaAvatars(avatarIds) {
-    const avatars = await this.listUserAvatarIds()
-    const missing = avatarIds.filter((id) => !avatars.includes(id))
+    const avatars = await this.listUserAvatarIds();
+    const missing = avatarIds.filter((id) => !avatars.includes(id));
     for (const id of missing) {
       if (safeFileName(id) !== id || !/\.png$/i.test(id))
-        throw new Error('人设头像标识必须是有效的 PNG 文件名')
+        throw new Error("人设头像标识必须是有效的 PNG 文件名");
     }
-    if (!missing.length) return
+    if (!missing.length) return;
     // SillyTavern's onPersonasRestoreInput also creates a default avatar for missing keys.
     // The SRL cover stays local; use the host's own default image so the persona is listed.
     const image = await assertResponse(
-      await fetch('/img/user-default.png'),
-      '读取酒馆默认头像',
-    ).blob()
+      await fetch("/img/user-default.png"),
+      "读取酒馆默认头像",
+    ).blob();
     for (const id of missing)
-      await this.importUserAvatar(new File([image], id, { type: 'image/png' }), id)
+      await this.importUserAvatar(
+        new File([image], id, { type: "image/png" }),
+        id,
+      );
   }
 
   async importWorldBook(file, conflictPolicy) {
-    const context = this.context
-    const parsed = JSON.parse(await file.text())
-    if (!parsed || typeof parsed !== 'object' || !('entries' in parsed)) {
-      throw new Error('世界书缺少 entries')
+    const context = this.context;
+    const parsed = JSON.parse(await file.text());
+    if (!parsed || typeof parsed !== "object" || !("entries" in parsed)) {
+      throw new Error("世界书缺少 entries");
     }
-    const baseName = safeFileName(file.name.replace(/\.[^.]+$/u, ''), 'SRL 世界书')
-    const names = context.getWorldInfoNames()
-    const existing = names.find((name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase())
-    if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
+    const baseName = safeFileName(
+      file.name.replace(/\.[^.]+$/u, ""),
+      "SRL 世界书",
+    );
+    const names = context.getWorldInfoNames();
+    const existing = names.find(
+      (name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
+    );
+    if (existing && conflictPolicy === "skip")
+      return { status: "skipped", name: existing };
     const targetName =
-      existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
-    const targetFile = new File([JSON.stringify(parsed)], `${targetName}.json`, {
-      type: 'application/json',
-    })
-    const form = new FormData()
-    form.append('avatar', targetFile)
+      existing && conflictPolicy === "copy"
+        ? uniqueName(baseName, names)
+        : baseName;
+    const targetFile = new File(
+      [JSON.stringify(parsed)],
+      `${targetName}.json`,
+      {
+        type: "application/json",
+      },
+    );
+    const form = new FormData();
+    form.append("avatar", targetFile);
     const response = assertResponse(
-      await fetch('/api/worldinfo/import', {
-        method: 'POST',
+      await fetch("/api/worldinfo/import", {
+        method: "POST",
         headers: context.getRequestHeaders({ omitContentType: true }),
         body: form,
-        cache: 'no-cache',
+        cache: "no-cache",
       }),
-      '导入世界书',
-    )
-    const result = await response.json()
-    await context.updateWorldInfoList?.()
+      "导入世界书",
+    );
+    const result = await response.json();
+    await context.updateWorldInfoList?.();
     return {
-      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing && conflictPolicy === "overwrite" ? "overwritten" : "created",
       name: result.name,
-    }
+    };
   }
 
   async importPreset(file, conflictPolicy) {
-    const context = this.context
-    const preset = JSON.parse(await file.text())
-    const manager = await context.getPresetManager()
-    if (!manager) throw new Error('当前酒馆没有可用的预设管理器')
-    const names = (await manager.getAllPresets?.()) ?? []
-    const baseName = safeFileName(file.name.replace(/\.[^.]+$/u, ''), 'SRL 预设')
-    const existing = names.find((name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase())
-    if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
+    const context = this.context;
+    const preset = JSON.parse(await file.text());
+    const manager = await context.getPresetManager();
+    if (!manager) throw new Error("当前酒馆没有可用的预设管理器");
+    const names = (await manager.getAllPresets?.()) ?? [];
+    const baseName = safeFileName(
+      file.name.replace(/\.[^.]+$/u, ""),
+      "SRL 预设",
+    );
+    const existing = names.find(
+      (name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
+    );
+    if (existing && conflictPolicy === "skip")
+      return { status: "skipped", name: existing };
     const targetName =
-      existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
-    await manager.savePreset(targetName, preset)
+      existing && conflictPolicy === "copy"
+        ? uniqueName(baseName, names)
+        : baseName;
+    await manager.savePreset(targetName, preset);
     return {
-      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing && conflictPolicy === "overwrite" ? "overwritten" : "created",
       name: targetName,
-    }
+    };
   }
 
   async importRegex(file, conflictPolicy) {
-    const parsed = JSON.parse(await file.text())
+    const parsed = JSON.parse(await file.text());
     const incoming = Array.isArray(parsed)
       ? parsed
       : Array.isArray(parsed.global)
         ? parsed.global
-        : [parsed]
-    if (!incoming.length || incoming.some((script) => !script || typeof script !== 'object')) {
-      throw new Error('正则文件内容无效')
+        : [parsed];
+    if (
+      !incoming.length ||
+      incoming.some((script) => !script || typeof script !== "object")
+    ) {
+      throw new Error("正则文件内容无效");
     }
     const scripts = Array.isArray(this.context.extensionSettings?.regex)
       ? [...this.context.extensionSettings.regex]
-      : []
-    let skipped = 0
+      : [];
+    let skipped = 0;
     for (const source of incoming) {
-      const script = structuredClone(source)
-      const baseName = safeFileName(script.scriptName || displayNameFromFile(file, 'SRL 正则'))
+      const script = structuredClone(source);
+      const baseName = safeFileName(
+        script.scriptName || displayNameFromFile(file, "SRL 正则"),
+      );
       const existingIndex = scripts.findIndex(
         (entry) =>
           (script.id && entry.id === script.id) ||
-          entry.scriptName?.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
-      )
-      if (existingIndex >= 0 && conflictPolicy === 'skip') {
-        skipped += 1
-        continue
+          entry.scriptName?.toLocaleLowerCase() ===
+            baseName.toLocaleLowerCase(),
+      );
+      if (existingIndex >= 0 && conflictPolicy === "skip") {
+        skipped += 1;
+        continue;
       }
-      if (existingIndex >= 0 && conflictPolicy === 'copy') {
-        script.id = crypto.randomUUID()
+      if (existingIndex >= 0 && conflictPolicy === "copy") {
+        script.id = crypto.randomUUID();
         script.scriptName = uniqueName(
           baseName,
-          scripts.map((entry) => entry.scriptName || ''),
-        )
-        scripts.push(script)
+          scripts.map((entry) => entry.scriptName || ""),
+        );
+        scripts.push(script);
       } else if (existingIndex >= 0) {
-        script.scriptName = baseName
-        scripts.splice(existingIndex, 1, script)
+        script.scriptName = baseName;
+        scripts.splice(existingIndex, 1, script);
       } else {
-        script.id ||= crypto.randomUUID()
-        script.scriptName = baseName
-        scripts.push(script)
+        script.id ||= crypto.randomUUID();
+        script.scriptName = baseName;
+        scripts.push(script);
       }
     }
-    this.context.extensionSettings.regex = scripts
-    this.context.saveSettingsDebounced()
+    this.context.extensionSettings.regex = scripts;
+    this.context.saveSettingsDebounced();
     return {
-      status: skipped === incoming.length ? 'skipped' : 'created',
+      status: skipped === incoming.length ? "skipped" : "created",
       name:
-        incoming.length === 1 ? incoming[0].scriptName || file.name : `${incoming.length} 条正则`,
-    }
+        incoming.length === 1
+          ? incoming[0].scriptName || file.name
+          : `${incoming.length} 条正则`,
+    };
   }
 
   async importScopedRegex(file, conflictPolicy, requestedName) {
-    const parsed = JSON.parse(await file.text())
-    let incoming = Array.isArray(parsed) ? parsed : parsed.scoped
-    if (!Array.isArray(incoming) || !incoming.length) throw new Error('角色卡正则文件为空')
+    const parsed = JSON.parse(await file.text());
+    let incoming = Array.isArray(parsed) ? parsed : parsed.scoped;
+    if (!Array.isArray(incoming) || !incoming.length)
+      throw new Error("角色卡正则文件为空");
     if (parsed.chatCompanion === true) {
-      conflictPolicy = 'copy'
-      incoming = incoming.map(rule => ({ ...rule, disabled: true }))
+      conflictPolicy = "copy";
+      incoming = incoming.map((rule) => ({ ...rule, disabled: true }));
     }
-    const targetName = requestedName || parsed.sourceName
-    const avatar = parsed.sourceAvatar
-    const index = this.context.characters.findIndex((character) => avatar
-      ? character.avatar === avatar
-      : character.name?.toLocaleLowerCase() === String(targetName).toLocaleLowerCase())
-    if (index < 0) throw new Error(`酒馆中找不到目标角色卡“${targetName || '未指定'}”`)
-    const character = this.context.characters[index]
+    const targetName = requestedName || parsed.sourceName;
+    const avatar = parsed.sourceAvatar;
+    const index = this.context.characters.findIndex((character) =>
+      avatar
+        ? character.avatar === avatar
+        : character.name?.toLocaleLowerCase() ===
+          String(targetName).toLocaleLowerCase(),
+    );
+    if (index < 0)
+      throw new Error(`酒馆中找不到目标角色卡“${targetName || "未指定"}”`);
+    const character = this.context.characters[index];
     const existing = Array.isArray(character.data?.extensions?.regex_scripts)
       ? character.data.extensions.regex_scripts
-      : []
-    if (existing.length && conflictPolicy === 'skip')
-      return { status: 'skipped', name: character.name }
-    const scripts = conflictPolicy === 'copy' ? this.mergeRegexCopies(existing, incoming) : incoming
-    await this.context.writeExtensionField(index, 'regex_scripts', scripts)
+      : [];
+    if (existing.length && conflictPolicy === "skip")
+      return { status: "skipped", name: character.name };
+    const scripts =
+      conflictPolicy === "copy"
+        ? this.mergeRegexCopies(existing, incoming)
+        : incoming;
+    await this.context.writeExtensionField(index, "regex_scripts", scripts);
     return {
-      status: existing.length && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing.length && conflictPolicy === "overwrite"
+          ? "overwritten"
+          : "created",
       name: character.name,
-    }
+    };
   }
 
   async importPresetRegex(file, conflictPolicy, requestedName) {
-    const parsed = JSON.parse(await file.text())
-    const incoming = Array.isArray(parsed) ? parsed : parsed.preset
-    if (!Array.isArray(incoming) || !incoming.length) throw new Error('预设正则文件为空')
-    const targetName = requestedName || parsed.sourceName
-    const manager = await this.context.getPresetManager()
-    const names = (await manager?.getAllPresets?.()) ?? []
+    const parsed = JSON.parse(await file.text());
+    const incoming = Array.isArray(parsed) ? parsed : parsed.preset;
+    if (!Array.isArray(incoming) || !incoming.length)
+      throw new Error("预设正则文件为空");
+    const targetName = requestedName || parsed.sourceName;
+    const manager = await this.context.getPresetManager();
+    const names = (await manager?.getAllPresets?.()) ?? [];
     const actualName = names.find(
-      (name) => name.toLocaleLowerCase() === String(targetName).toLocaleLowerCase(),
-    )
-    if (!actualName) throw new Error(`酒馆中找不到目标预设“${targetName || '未指定'}”`)
-    const preset = await manager.getCompletionPresetByName(actualName)
+      (name) =>
+        name.toLocaleLowerCase() === String(targetName).toLocaleLowerCase(),
+    );
+    if (!actualName)
+      throw new Error(`酒馆中找不到目标预设“${targetName || "未指定"}”`);
+    const preset = await manager.getCompletionPresetByName(actualName);
     const existing = Array.isArray(preset?.extensions?.regex_scripts)
       ? preset.extensions.regex_scripts
-      : []
-    if (existing.length && conflictPolicy === 'skip') return { status: 'skipped', name: actualName }
-    const scripts = conflictPolicy === 'copy' ? this.mergeRegexCopies(existing, incoming) : incoming
+      : [];
+    if (existing.length && conflictPolicy === "skip")
+      return { status: "skipped", name: actualName };
+    const scripts =
+      conflictPolicy === "copy"
+        ? this.mergeRegexCopies(existing, incoming)
+        : incoming;
     await manager.writePresetExtensionField({
       name: actualName,
-      path: 'regex_scripts',
+      path: "regex_scripts",
       value: scripts,
-    })
+    });
     return {
-      status: existing.length && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing.length && conflictPolicy === "overwrite"
+          ? "overwritten"
+          : "created",
       name: actualName,
-    }
+    };
   }
 
   mergeRegexCopies(existing, incoming) {
-    const result = [...existing]
+    const result = [...existing];
     for (const source of incoming) {
-      const script = structuredClone(source)
-      const baseName = safeFileName(script.scriptName || script.script_name || 'SRL 正则')
-      script.id = crypto.randomUUID()
+      const script = structuredClone(source);
+      const baseName = safeFileName(
+        script.scriptName || script.script_name || "SRL 正则",
+      );
+      script.id = crypto.randomUUID();
       script.scriptName = uniqueName(
         baseName,
-        result.map((entry) => entry.scriptName || entry.script_name || ''),
-      )
-      result.push(script)
+        result.map((entry) => entry.scriptName || entry.script_name || ""),
+      );
+      result.push(script);
     }
-    return result
+    return result;
   }
 
   async importGlobalScript(file, conflictPolicy) {
-    const incoming = normalizeHelperScriptTrees(JSON.parse(await file.text()))
-    if (!incoming.length) throw new Error('脚本文件内容无效')
-    const context = this.context
-    const settings = context.extensionSettings
-    if (!settings[HELPER_FIELD] || typeof settings[HELPER_FIELD] !== 'object') {
-      settings[HELPER_FIELD] = {}
+    const incoming = normalizeHelperScriptTrees(JSON.parse(await file.text()));
+    if (!incoming.length) throw new Error("脚本文件内容无效");
+    const context = this.context;
+    const settings = context.extensionSettings;
+    if (!settings[HELPER_FIELD] || typeof settings[HELPER_FIELD] !== "object") {
+      settings[HELPER_FIELD] = {};
     }
-    if (!settings[HELPER_FIELD].script || typeof settings[HELPER_FIELD].script !== 'object') {
-      settings[HELPER_FIELD].script = {}
+    if (
+      !settings[HELPER_FIELD].script ||
+      typeof settings[HELPER_FIELD].script !== "object"
+    ) {
+      settings[HELPER_FIELD].script = {};
     }
     if (!Array.isArray(settings[HELPER_FIELD].script.scripts)) {
-      settings[HELPER_FIELD].script.scripts = []
+      settings[HELPER_FIELD].script.scripts = [];
     }
-    const trees = settings[HELPER_FIELD].script.scripts
-    let skipped = 0
-    let lastName = ''
+    const trees = settings[HELPER_FIELD].script.scripts;
+    let skipped = 0;
+    let lastName = "";
     for (const source of incoming) {
-      const tree = sanitizeImportedHelperTree(source)
-      const baseName = helperTreeName(tree, displayNameFromFile(file, 'SRL 脚本'))
+      const tree = sanitizeImportedHelperTree(source);
+      const baseName = helperTreeName(
+        tree,
+        displayNameFromFile(file, "SRL 脚本"),
+      );
       const existingIndex = trees.findIndex(
         (entry) =>
-          helperTreeName(entry, '').toLocaleLowerCase() === baseName.toLocaleLowerCase() &&
-          baseName,
-      )
-      if (existingIndex >= 0 && conflictPolicy === 'skip') {
-        skipped += 1
-        continue
+          helperTreeName(entry, "").toLocaleLowerCase() ===
+            baseName.toLocaleLowerCase() && baseName,
+      );
+      if (existingIndex >= 0 && conflictPolicy === "skip") {
+        skipped += 1;
+        continue;
       }
-      if (existingIndex >= 0 && conflictPolicy === 'overwrite') {
-        tree.name = baseName
-        trees.splice(existingIndex, 1, tree)
+      if (existingIndex >= 0 && conflictPolicy === "overwrite") {
+        tree.name = baseName;
+        trees.splice(existingIndex, 1, tree);
       } else {
         tree.name =
           existingIndex >= 0
             ? uniqueName(
                 baseName,
-                trees.map((entry) => helperTreeName(entry, '')),
+                trees.map((entry) => helperTreeName(entry, "")),
               )
-            : baseName
-        trees.push(tree)
+            : baseName;
+        trees.push(tree);
       }
-      lastName = tree.name
+      lastName = tree.name;
     }
-    context.saveSettingsDebounced()
+    context.saveSettingsDebounced();
     return {
-      status: skipped === incoming.length ? 'skipped' : 'created',
-      name: incoming.length === 1 ? lastName || file.name : `${incoming.length} 个脚本（已停用）`,
-    }
+      status: skipped === incoming.length ? "skipped" : "created",
+      name:
+        incoming.length === 1
+          ? lastName || file.name
+          : `${incoming.length} 个脚本（已停用）`,
+    };
   }
 
   async importCharacterScript(file, conflictPolicy, requestedName) {
-    const parsed = JSON.parse(await file.text())
-    const incoming = normalizeHelperScriptTrees(parsed)
-    if (!incoming.length) throw new Error('角色卡脚本文件为空')
-    const targetName = requestedName || parsed.sourceName
+    const parsed = JSON.parse(await file.text());
+    const incoming = normalizeHelperScriptTrees(parsed);
+    if (!incoming.length) throw new Error("角色卡脚本文件为空");
+    const targetName = requestedName || parsed.sourceName;
     const index = this.context.characters.findIndex(
       (character) =>
-        character.name?.toLocaleLowerCase() === String(targetName).toLocaleLowerCase() ||
+        character.name?.toLocaleLowerCase() ===
+          String(targetName).toLocaleLowerCase() ||
         character.avatar === parsed.sourceAvatar,
-    )
-    if (index < 0) throw new Error(`酒馆中找不到目标角色卡“${targetName || '未指定'}”`)
-    const character = this.context.characters[index]
+    );
+    if (index < 0)
+      throw new Error(`酒馆中找不到目标角色卡“${targetName || "未指定"}”`);
+    const character = this.context.characters[index];
     const existingSettings =
       character.data?.extensions?.[HELPER_FIELD] &&
-      typeof character.data.extensions[HELPER_FIELD] === 'object'
+      typeof character.data.extensions[HELPER_FIELD] === "object"
         ? structuredClone(character.data.extensions[HELPER_FIELD])
-        : {}
-    const existing = Array.isArray(existingSettings.scripts) ? existingSettings.scripts : []
-    if (existing.length && conflictPolicy === 'skip')
-      return { status: 'skipped', name: character.name }
-    const sanitized = incoming.map((tree) => sanitizeImportedHelperTree(tree))
+        : {};
+    const existing = Array.isArray(existingSettings.scripts)
+      ? existingSettings.scripts
+      : [];
+    if (existing.length && conflictPolicy === "skip")
+      return { status: "skipped", name: character.name };
+    const sanitized = incoming.map((tree) => sanitizeImportedHelperTree(tree));
     existingSettings.scripts =
-      existing.length && conflictPolicy === 'overwrite' ? sanitized : [...existing, ...sanitized]
-    await this.context.writeExtensionField(index, HELPER_FIELD, existingSettings)
+      existing.length && conflictPolicy === "overwrite"
+        ? sanitized
+        : [...existing, ...sanitized];
+    await this.context.writeExtensionField(
+      index,
+      HELPER_FIELD,
+      existingSettings,
+    );
     return {
-      status: existing.length && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing.length && conflictPolicy === "overwrite"
+          ? "overwritten"
+          : "created",
       name: `${character.name}（脚本已停用）`,
-    }
+    };
   }
 
   async importPresetScript(file, conflictPolicy, requestedName) {
-    const parsed = JSON.parse(await file.text())
-    const incoming = normalizeHelperScriptTrees(parsed)
-    if (!incoming.length) throw new Error('预设脚本文件为空')
-    const targetName = requestedName || parsed.sourceName
-    const manager = await this.context.getPresetManager()
-    const names = (await manager?.getAllPresets?.()) ?? []
+    const parsed = JSON.parse(await file.text());
+    const incoming = normalizeHelperScriptTrees(parsed);
+    if (!incoming.length) throw new Error("预设脚本文件为空");
+    const targetName = requestedName || parsed.sourceName;
+    const manager = await this.context.getPresetManager();
+    const names = (await manager?.getAllPresets?.()) ?? [];
     const actualName = names.find(
-      (name) => name.toLocaleLowerCase() === String(targetName).toLocaleLowerCase(),
-    )
-    if (!actualName) throw new Error(`酒馆中找不到目标预设“${targetName || '未指定'}”`)
-    const preset = await manager.getCompletionPresetByName(actualName)
+      (name) =>
+        name.toLocaleLowerCase() === String(targetName).toLocaleLowerCase(),
+    );
+    if (!actualName)
+      throw new Error(`酒馆中找不到目标预设“${targetName || "未指定"}”`);
+    const preset = await manager.getCompletionPresetByName(actualName);
     const existingSettings =
-      preset?.extensions?.[HELPER_FIELD] && typeof preset.extensions[HELPER_FIELD] === 'object'
+      preset?.extensions?.[HELPER_FIELD] &&
+      typeof preset.extensions[HELPER_FIELD] === "object"
         ? structuredClone(preset.extensions[HELPER_FIELD])
-        : {}
-    const existing = Array.isArray(existingSettings.scripts) ? existingSettings.scripts : []
-    if (existing.length && conflictPolicy === 'skip') return { status: 'skipped', name: actualName }
-    const sanitized = incoming.map((tree) => sanitizeImportedHelperTree(tree))
+        : {};
+    const existing = Array.isArray(existingSettings.scripts)
+      ? existingSettings.scripts
+      : [];
+    if (existing.length && conflictPolicy === "skip")
+      return { status: "skipped", name: actualName };
+    const sanitized = incoming.map((tree) => sanitizeImportedHelperTree(tree));
     existingSettings.scripts =
-      existing.length && conflictPolicy === 'overwrite' ? sanitized : [...existing, ...sanitized]
+      existing.length && conflictPolicy === "overwrite"
+        ? sanitized
+        : [...existing, ...sanitized];
     await manager.writePresetExtensionField({
       name: actualName,
       path: HELPER_FIELD,
       value: existingSettings,
-    })
+    });
     return {
-      status: existing.length && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing.length && conflictPolicy === "overwrite"
+          ? "overwritten"
+          : "created",
       name: `${actualName}（脚本已停用）`,
-    }
+    };
   }
 
   async importQuickReply(file, conflictPolicy) {
-    const api = globalThis.quickReplyApi
-    if (!api) throw new Error('快速回复模块尚未加载，请稍后重试')
-    const parsed = JSON.parse(await file.text())
-    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.qrList)) {
-      throw new Error('快速回复文件缺少 qrList')
+    const api = globalThis.quickReplyApi;
+    if (!api) throw new Error("快速回复模块尚未加载，请稍后重试");
+    const parsed = JSON.parse(await file.text());
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.qrList)
+    ) {
+      throw new Error("快速回复文件缺少 qrList");
     }
-    const baseName = safeFileName(parsed.name || displayNameFromFile(file, 'SRL 快速回复'))
-    const names = api.listSets()
-    const existing = names.find((name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase())
-    if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing }
+    const baseName = safeFileName(
+      parsed.name || displayNameFromFile(file, "SRL 快速回复"),
+    );
+    const names = api.listSets();
+    const existing = names.find(
+      (name) => name.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
+    );
+    if (existing && conflictPolicy === "skip")
+      return { status: "skipped", name: existing };
     const targetName =
-      existing && conflictPolicy === 'copy' ? uniqueName(baseName, names) : baseName
+      existing && conflictPolicy === "copy"
+        ? uniqueName(baseName, names)
+        : baseName;
     const set = await api.createSet(targetName, {
       disableSend: parsed.disableSend,
       placeBeforeInput: parsed.placeBeforeInput,
       injectInput: parsed.injectInput,
-    })
-    set.color = typeof parsed.color === 'string' ? parsed.color : 'transparent'
-    set.onlyBorderColor = Boolean(parsed.onlyBorderColor)
-    set.qrList.splice(0)
-    for (const quickReply of parsed.qrList) set.addQuickReply(structuredClone(quickReply))
-    await set.save()
+    });
+    set.color = typeof parsed.color === "string" ? parsed.color : "transparent";
+    set.onlyBorderColor = Boolean(parsed.onlyBorderColor);
+    set.qrList.splice(0);
+    for (const quickReply of parsed.qrList)
+      set.addQuickReply(structuredClone(quickReply));
+    await set.save();
     return {
-      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing && conflictPolicy === "overwrite" ? "overwritten" : "created",
       name: targetName,
-    }
+    };
   }
 
   async importTheme(file, conflictPolicy) {
-    const parsed = JSON.parse(await file.text())
-    if (!parsed || typeof parsed !== 'object') throw new Error('主题文件内容无效')
-    const themes = (await this.getSettingsData()).themes ?? []
-    const baseName = safeFileName(parsed.name || displayNameFromFile(file, 'SRL 主题'))
+    const parsed = JSON.parse(await file.text());
+    if (!parsed || typeof parsed !== "object")
+      throw new Error("主题文件内容无效");
+    const themes = (await this.getSettingsData()).themes ?? [];
+    const baseName = safeFileName(
+      parsed.name || displayNameFromFile(file, "SRL 主题"),
+    );
     const existing = themes.find(
-      (theme) => theme.name?.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
-    )
-    if (existing && conflictPolicy === 'skip') return { status: 'skipped', name: existing.name }
+      (theme) =>
+        theme.name?.toLocaleLowerCase() === baseName.toLocaleLowerCase(),
+    );
+    if (existing && conflictPolicy === "skip")
+      return { status: "skipped", name: existing.name };
     const targetName =
-      existing && conflictPolicy === 'copy'
+      existing && conflictPolicy === "copy"
         ? uniqueName(
             baseName,
             themes.map((theme) => theme.name),
           )
-        : baseName
-    const response = await fetch('/api/themes/save', {
-      method: 'POST',
+        : baseName;
+    const response = await fetch("/api/themes/save", {
+      method: "POST",
       headers: this.context.getRequestHeaders(),
       body: JSON.stringify({ ...parsed, name: targetName }),
-    })
-    assertResponse(response, '导入主题')
+    });
+    assertResponse(response, "导入主题");
     return {
-      status: existing && conflictPolicy === 'overwrite' ? 'overwritten' : 'created',
+      status:
+        existing && conflictPolicy === "overwrite" ? "overwritten" : "created",
       name: targetName,
-    }
+    };
   }
 }

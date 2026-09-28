@@ -50,12 +50,14 @@
 .srl-bridge-log-empty { margin-block: .4rem; opacity: .65; }
 .srl-bridge-parcel-body { display: grid; gap: .65rem; }
 .srl-bridge-parcel-modes, .srl-bridge-parcel-actions { display: flex; gap: .4rem; }
+.srl-bridge-parcel-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .srl-bridge-parcel-modes button { flex: 1; }
 .srl-bridge-parcel-modes button[aria-pressed='true'] { border-color: var(--SmartThemeQuoteColor); font-weight: bold; }
 .srl-bridge-parcels fieldset { display: grid; gap: .6rem; min-width: 0; margin: 0; padding: 0; border: 0; }
 .srl-bridge-parcels label { display: grid; gap: .3rem; min-width: 0; }
 .srl-bridge-parcels input:not([type='checkbox']), .srl-bridge-parcels textarea, .srl-bridge-parcels select { box-sizing: border-box; width: 100%; min-width: 0; font-size: 1rem; }
-.srl-bridge-parcels .menu_button { min-height: 40px; white-space: normal; margin: .2rem 0; }
+.srl-bridge-parcels .menu_button { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; white-space: normal; overflow-wrap: anywhere; margin: .2rem 0; }
+.srl-bridge-parcel-feedback [data-parcel='cancel'] { width: auto; flex: 0 0 auto; white-space: nowrap; }
 .srl-bridge-parcel-list { max-height: 230px; overflow: auto; }
 .srl-bridge-parcel-list label { display: flex; align-items: center; gap: .65rem; min-height: 44px; padding-block: .35rem; border-bottom: 1px solid var(--srl-line); }
 .srl-bridge-parcel-list span, .srl-bridge-parcels li { overflow-wrap: anywhere; }

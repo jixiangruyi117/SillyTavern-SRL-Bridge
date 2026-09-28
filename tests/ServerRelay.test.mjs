@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { Readable } from 'node:stream'
 
 import { exit, init } from '../server-plugin/index.mjs'
@@ -34,6 +37,47 @@ function responseRecorder() {
     },
   }
 }
+
+test('returns exact sizes for requested Tavern files without reading their contents', async () => {
+  const routes = new Map()
+  const router = {
+    get(route, handler) { routes.set(`GET ${route}`, handler) },
+    post(route, handler) { routes.set(`POST ${route}`, handler) },
+    put(route, handler) { routes.set(`PUT ${route}`, handler) },
+    delete(route, handler) { routes.set(`DELETE ${route}`, handler) },
+  }
+  const root = await mkdtemp(path.join(os.tmpdir(), 'srl-bridge-size-'))
+  const characters = path.join(root, 'characters')
+  const worlds = path.join(root, 'worlds')
+  await mkdir(characters)
+  await mkdir(worlds)
+  await writeFile(path.join(characters, '角色.png'), Buffer.from([1, 2, 3, 4]))
+  await writeFile(path.join(worlds, '世界书.json'), Buffer.from([5, 6, 7]))
+  await init(router)
+  try {
+    const response = responseRecorder()
+    await routes.get('POST /resource-sizes')(
+      {
+        user: { directories: { characters, worlds } },
+        body: {
+          items: [
+            { id: 'character:角色.png', kind: 'character', name: '角色.png' },
+            { id: 'worldBook:世界书', kind: 'worldBook', name: '世界书' },
+            { id: 'bad', kind: 'worldBook', name: '../outside' },
+            { id: 'unknown', kind: 'settings', name: 'settings.json' },
+          ],
+        },
+      },
+      response,
+    )
+    assert.deepEqual(response.body, {
+      sizes: { 'character:角色.png': 4, 'worldBook:世界书': 3 },
+    })
+  } finally {
+    await exit()
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('allows a second browser to join with the short-lived device code', async () => {
   const routes = new Map()

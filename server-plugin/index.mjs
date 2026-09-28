@@ -116,6 +116,17 @@ function validHttpUrl(value) {
   }
 }
 
+function validResourceName(value) {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 255 &&
+    value !== '.' &&
+    value !== '..' &&
+    !/[\\/\u0000-\u001f]/u.test(value)
+  )
+}
+
 function isLoopbackRequest(request) {
   const address = String(request.socket?.remoteAddress ?? request.ip ?? '')
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
@@ -204,6 +215,42 @@ function flush(session, role) {
 
 export async function init(router) {
   const relayScript = fs.readFileSync(new URL('./relay.js', import.meta.url), 'utf8')
+
+  router.post('/resource-sizes', async (request, response) => {
+    const directories = request.user?.directories
+    const items = request.body?.items
+    if (!directories) return response.sendStatus(401)
+    if (!Array.isArray(items) || items.length > 500) {
+      return response.status(400).json({ error: 'Invalid resource size request' })
+    }
+
+    const sizes = {}
+    await Promise.all(items.map(async (item) => {
+      if (
+        typeof item?.id !== 'string' ||
+        item.id.length > 512 ||
+        !['character', 'worldBook'].includes(item.kind) ||
+        !validResourceName(item.name)
+      ) return
+
+      const directory = item.kind === 'character' ? directories.characters : directories.worlds
+      const fileName = item.kind === 'character' ? item.name : `${item.name}.json`
+      if (typeof directory !== 'string' || !fileName.endsWith(item.kind === 'character' ? '.png' : '.json')) return
+
+      const root = path.resolve(directory)
+      const target = path.resolve(root, fileName)
+      if (!target.startsWith(`${root}${path.sep}`)) return
+
+      try {
+        const stat = await fs.promises.stat(target)
+        if (stat.isFile() && Number.isSafeInteger(stat.size)) sizes[item.id] = stat.size
+      } catch {
+        // Resources can disappear while the catalog is being refreshed.
+      }
+    }))
+
+    return response.json({ sizes })
+  })
 
   router.post('/sessions', (request, response) => {
     const srlUrl = validHttpUrl(request.body?.srlUrl)

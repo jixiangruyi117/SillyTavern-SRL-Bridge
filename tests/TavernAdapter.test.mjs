@@ -36,6 +36,65 @@ test('lists supported resources exposed by SillyTavern context', async () => {
   )
 })
 
+test('lists real source sizes for cards/world books and exact export sizes for JSON resources', async () => {
+  const context = installContext({
+    characters: [{
+      name: '角色',
+      avatar: '角色.png',
+      data: {
+        creator: 'SRL',
+        extensions: {
+          regex_scripts: [{ id: 'scoped-regex', scriptName: '角色规则' }],
+          tavern_helper: { scripts: [{ type: 'script', id: 'helper-script', name: '角色脚本', content: 'return true' }] },
+        },
+      },
+    }],
+    getWorldInfoNames: () => ['世界书'],
+    powerUserSettings: {
+      personas: { 'avatar.png': '人设内容' },
+      persona_descriptions: { 'avatar.png': { title: '人设' } },
+    },
+    extensionSettings: { regex: [{ id: 'regex-1', scriptName: '全局规则' }] },
+    getPresetManager: async () => ({
+      getAllPresets: async () => ['默认预设'],
+      getCompletionPresetByName: async () => ({ name: '默认预设', temperature: 1 }),
+    }),
+  })
+  const requests = []
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options })
+    if (url === '/api/settings/get') return Response.json({ themes: [] })
+    if (url === '/api/plugins/srl-bridge/resource-sizes')
+      return Response.json({ sizes: { 'character:角色.png': 1234, 'worldBook:世界书': 5678 } })
+    throw new Error(`Unexpected request: ${url}`)
+  }
+
+  const adapter = new TavernAdapter()
+  const items = await adapter.listResources()
+  const card = items.find((item) => item.kind === 'character')
+  const world = items.find((item) => item.kind === 'worldBook')
+  const persona = items.find((item) => item.kind === 'userPersona')
+  const preset = items.find((item) => item.kind === 'preset')
+  const regex = items.find((item) => item.kind === 'regexGlobal')
+  const characterRegex = items.find((item) => item.kind === 'regexCharacter')
+  const characterScripts = items.find((item) => item.kind === 'scriptCharacter')
+
+  assert.equal(card.size, 1234)
+  assert.equal(world.size, 5678)
+  assert.equal(persona.size, (await adapter.exportResource(persona)).size)
+  assert.equal(preset.size, (await adapter.exportResource(preset)).size)
+  assert.equal(regex.size, (await adapter.exportResource(regex)).size)
+  assert.equal(characterRegex.size, (await adapter.exportResource(characterRegex)).size)
+  assert.equal(characterScripts.size, (await adapter.exportResource(characterScripts)).size)
+  assert.equal(requests.filter((request) => request.url === '/api/plugins/srl-bridge/resource-sizes').length, 1)
+  assert.equal(requests.some((request) => request.url === '/api/characters/export'), false)
+  assert.equal(requests.some((request) => request.url === '/api/worldinfo/get'), false)
+  assert.equal(
+    requests.find((request) => request.url === '/api/plugins/srl-bridge/resource-sizes').options.headers['X-CSRF-Token'],
+    'test',
+  )
+})
+
 test('loads each preset once with bounded concurrency when listing a large preset library', async () => {
   const names = Array.from({ length: 24 }, (_, index) => `预设 ${index}`)
   let active = 0
