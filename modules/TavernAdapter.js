@@ -1,14 +1,15 @@
 import {
   MAX_FILE_SIZE,
   RESOURCE_KINDS,
+  sha256,
   safeFileName,
   uniqueName,
-} from "./Protocol.js?v=0.3.43";
+} from "./Protocol.js?v=0.3.44";
 import {
   listChatResources,
   exportChatArchive,
   importChatRecord,
-} from "./TavernChatArchive.js?v=0.3.43";
+} from "./TavernChatArchive.js?v=0.3.44";
 
 function assertResponse(response, action) {
   if (response.ok) return response;
@@ -402,12 +403,46 @@ export class TavernAdapter {
       ) {
         throw new Error(`找不到用户人设“${item.name}”`);
       }
+      const sourceDescriptor =
+        settings.persona_descriptions?.[avatarId] &&
+        typeof settings.persona_descriptions[avatarId] === "object"
+          ? settings.persona_descriptions[avatarId]
+          : {};
+      const descriptor = structuredClone(sourceDescriptor);
+      const bindingIds = new Set(
+        (Array.isArray(descriptor.connections) ? descriptor.connections : [])
+          .filter((connection) => connection?.type === "character")
+          .map((connection) => connection.id)
+          .filter((id) => typeof id === "string" && id),
+      );
+      const profileVariants = descriptor.srl_persona_profile?.variants;
+      if (profileVariants && typeof profileVariants === "object") {
+        for (const id of Object.keys(profileVariants)) bindingIds.add(id);
+      }
+      const bindings =
+        descriptor.srl_persona_character_bindings &&
+        typeof descriptor.srl_persona_character_bindings === "object"
+          ? { ...descriptor.srl_persona_character_bindings }
+          : {};
+      for (const id of bindingIds) {
+        const character = context.characters.find((entry) => entry.avatar === id);
+        if (!character) continue;
+        const card = await this.exportResource(
+          { kind: RESOURCE_KINDS.CHARACTER, id: `character:${character.avatar}` },
+          { signal },
+        );
+        if (card.size > MAX_FILE_SIZE) continue;
+        bindings[id] = {
+          avatar: character.avatar,
+          name: character.name || character.avatar.replace(/\.png$/i, ""),
+          hash: await sha256(card),
+        };
+      }
+      descriptor.srl_persona_character_bindings = bindings;
       return jsonFile(
         {
           personas: { [avatarId]: settings.personas[avatarId] },
-          persona_descriptions: {
-            [avatarId]: settings.persona_descriptions?.[avatarId] ?? {},
-          },
+          persona_descriptions: { [avatarId]: descriptor },
           ...(settings.default_persona === avatarId
             ? { default_persona: avatarId }
             : {}),

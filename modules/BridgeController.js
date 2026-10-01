@@ -18,10 +18,10 @@ import {
   supportsGzip,
   gzipBlob,
   gunzipBlob,
-} from "./Protocol.js?v=0.3.43";
-import { RelayPort } from "./RelayPort.js?v=0.3.43";
-import { detectHostRuntime } from "./HostRuntime.js?v=0.3.43";
-import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.43";
+} from "./Protocol.js?v=0.3.44";
+import { RelayPort } from "./RelayPort.js?v=0.3.44";
+import { detectHostRuntime } from "./HostRuntime.js?v=0.3.44";
+import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.44";
 
 function isServerPluginRelayPath(value) {
   let pathname;
