@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  isPromptSlotEntryComplete,
+  shouldInjectPromptSlotEntry,
   discoverPromptSlotMetadata,
   getCharacterPromptSlotValues,
   normalizePromptSlotMetadata,
@@ -27,11 +27,12 @@ test("accepts the resource library schema and filters malformed slot entries", (
   assert.deepEqual(normalizePromptSlotMetadata({ schemaVersion: 2, entries: [] }), []);
 });
 
-test("empty values hide the associated entry and filled values replace macros", () => {
-  const entry = { slots: [{ id: "style", label: "文风" }] };
-  assert.equal(isPromptSlotEntryComplete(entry, {}), false);
-  assert.equal(isPromptSlotEntryComplete(entry, { style: "  " }), false);
-  assert.equal(isPromptSlotEntryComplete(entry, { style: "克制、简洁" }), true);
+test("any filled slot shows the entry; macros without values become empty strings", () => {
+  const entry = { slots: [{ id: "style", label: "文风" }, { id: "status", label: "状态栏" }] };
+  assert.equal(shouldInjectPromptSlotEntry(entry, {}), false);
+  assert.equal(shouldInjectPromptSlotEntry(entry, { style: "  ", status: "\n" }), false);
+  assert.equal(shouldInjectPromptSlotEntry(entry, { style: "克制、简洁" }), true);
+  assert.equal(shouldInjectPromptSlotEntry(entry, { style: "", status: "<状态栏>在线</状态栏>" }), true);
   assert.equal(replacePromptSlotMacro("style", "文风", { style: "克制、简洁" }), "克制、简洁");
   assert.equal(replacePromptSlotMacro("missing", "文风", {}), "");
 });

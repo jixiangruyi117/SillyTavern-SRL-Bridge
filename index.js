@@ -6,8 +6,8 @@ import {
   refreshPersonaVariantPrompt,
 } from "./modules/PersonaVariantRuntime.js?v=0.3.53";
 import { startPersonaVariantManager } from "./modules/PersonaVariantManager.js?v=0.3.53";
-import { startPromptSlotManager } from "./modules/PromptSlotManager.js?v=0.3.54";
-import { startPromptSlotRuntime } from "./modules/PromptSlotRuntime.js?v=0.3.54";
+import { startPromptSlotManager } from "./modules/PromptSlotManager.js?v=0.3.55";
+import { startPromptSlotRuntime } from "./modules/PromptSlotRuntime.js?v=0.3.55";
 
 const SETTINGS_KEY = "srl-bridge";
 let controller;

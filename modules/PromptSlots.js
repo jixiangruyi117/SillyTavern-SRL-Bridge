@@ -70,8 +70,8 @@ export function resolvePromptSlotValue(values, id) {
   return typeof value === "string" ? value : "";
 }
 
-export function isPromptSlotEntryComplete(entry, values) {
-  return entry.slots.every((slot) => resolvePromptSlotValue(values, slot.id).trim());
+export function shouldInjectPromptSlotEntry(entry, values) {
+  return entry.slots.some((slot) => resolvePromptSlotValue(values, slot.id).trim());
 }
 
 export function replacePromptSlotMacro(id, _label, values) {
@@ -87,7 +87,7 @@ export function reconcilePromptOrderVisibility(orderGroups, entries, values, con
 
   const visibility = new Map(entries.map((entry) => [
     entry.identifier,
-    isPromptSlotEntryComplete(entry, values),
+    shouldInjectPromptSlotEntry(entry, values),
   ]));
   for (const promptOrder of orderGroups || []) {
     for (const order of promptOrder?.order || []) {

@@ -1,7 +1,7 @@
 import { eventSource, event_types } from "/scripts/events.js";
 import { saveSettingsDebounced } from "/script.js";
 import { discoverPromptSlotMetadata, getCharacterPromptSlotValues } from "./PromptSlots.js";
-import { refreshPromptSlots } from "./PromptSlotRuntime.js?v=0.3.54";
+import { refreshPromptSlots } from "./PromptSlotRuntime.js?v=0.3.55";
 
 let saving = Promise.resolve();
 const saveTimers = new Map();
