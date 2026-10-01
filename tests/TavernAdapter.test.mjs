@@ -383,6 +383,27 @@ test('lists and exports one user persona without avatars or unrelated settings a
     lorebook: '世界书',
     connections: [{ type: 'character', id: 'test.png' }],
     extensionField: { keep: true },
+    srl_persona_profile: {
+      version: 1,
+      sections: [{ id: 'base', name: '基础设定', text: '全局人设' }],
+      variants: {
+        'test.png': {
+          defaultVersionId: 'detective-1',
+          versions: {
+            'detective-1': {
+              name: '初遇',
+              overrides: { base: { mode: 'replace', text: '初遇版本' } },
+              addition: '初次相遇。',
+            },
+            'detective-2': {
+              name: '重逢',
+              overrides: {},
+              addition: '多年后重逢。',
+            },
+          },
+        },
+      },
+    },
   }
   const settings = {
     personas: { 'alice.png': 'Alice', 'bob.png': 'Bob' },
@@ -429,7 +450,25 @@ test('creates missing persona keys with the Tavern default avatar, without trans
     [
       JSON.stringify({
         personas: { 'new.png': '新用户' },
-        persona_descriptions: { 'new.png': { description: '设定' } },
+        persona_descriptions: {
+          'new.png': {
+            description: '设定',
+            srl_persona_profile: {
+              version: 1,
+              sections: [{ id: 'base', name: '基础设定', text: '全局' }],
+              variants: {
+                'char.png': {
+                  defaultVersionId: 'current',
+                  versions: {
+                    current: { name: '初遇', overrides: {}, addition: '初次相遇。' },
+                    reunion: { name: '重逢', overrides: {}, addition: '多年后重逢。' },
+                  },
+                  chatVersions: { 'chat-1': 'reunion' },
+                },
+              },
+            },
+          },
+        },
       }),
     ],
     'personas.json',
@@ -437,6 +476,17 @@ test('creates missing persona keys with the Tavern default avatar, without trans
   await new TavernAdapter().importUserPersona(file, 'copy')
   assert.deepEqual(uploads, [['new.png', 'host-default-image']])
   assert.equal(context.powerUserSettings.personas['new.png'], '新用户')
+  assert.deepEqual(
+    context.powerUserSettings.persona_descriptions['new.png'].srl_persona_profile.variants['char.png'],
+    {
+      defaultVersionId: 'current',
+      versions: {
+        current: { name: '初遇', overrides: {}, addition: '初次相遇。' },
+        reunion: { name: '重逢', overrides: {}, addition: '多年后重逢。' },
+      },
+      chatVersions: { 'chat-1': 'reunion' },
+    },
+  )
 })
 
 test('refreshes the Tavern persona list immediately after a successful import', async () => {

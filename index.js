@@ -2,9 +2,15 @@ import { BridgeController } from "./modules/BridgeController.js?v=0.3.43";
 import { TavernAdapter } from "./modules/TavernAdapter.js?v=0.3.43";
 import { waitForHostReady } from "./modules/HostRuntime.js?v=0.3.43";
 import { attachParcelPanel } from "./modules/ParcelPanel.js?v=0.3.43";
+import {
+  refreshPersonaVariantPrompt,
+} from "./modules/PersonaVariantRuntime.js?v=0.3.53";
+import { startPersonaVariantManager } from "./modules/PersonaVariantManager.js?v=0.3.53";
 
 const SETTINGS_KEY = "srl-bridge";
 let controller;
+
+startPersonaVariantManager();
 
 function defaultSrlUrl(hostRuntime) {
   if (hostRuntime?.isTauriTavern) return "";
@@ -99,6 +105,7 @@ async function initialize() {
   const host = document.getElementById("extensions_settings2");
   if (!host || !response.ok) return;
   host.insertAdjacentHTML("beforeend", await response.text());
+  refreshPersonaVariantPrompt();
   let hostRuntime;
   try {
     const ready = await waitForHostReady();
@@ -119,6 +126,7 @@ async function initialize() {
       refreshPersonas: async () => {
         const { getUserAvatars } = await import("/scripts/personas.js");
         await getUserAvatars(true);
+        refreshPersonaVariantPrompt();
       },
     }),
     hostRuntime,
