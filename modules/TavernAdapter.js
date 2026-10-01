@@ -195,6 +195,7 @@ export class TavernAdapter {
             : {}),
         }),
       }));
+    if (kind === "userPersona") return personas;
     const characters = context.characters.map((character) => ({
       id: `character:${character.avatar}`,
       kind: RESOURCE_KINDS.CHARACTER,
@@ -202,6 +203,7 @@ export class TavernAdapter {
       fileName: character.avatar,
       detail: character.data?.creator || character.creator || "",
     }));
+    if (kind === "character") return characters;
     const worldBooks = context.getWorldInfoNames().map((name) => ({
       id: `worldBook:${name}`,
       kind: RESOURCE_KINDS.WORLD_BOOK,

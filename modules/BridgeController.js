@@ -420,6 +420,7 @@ export class BridgeController extends EventTarget {
           "persona-avatar-check-v1",
           "chat-archive-v1",
           "chat-import-v1",
+          "catalog-kind-filter-v1",
         ],
         bridgeVersion: BRIDGE_EXTENSION_VERSION,
         tavernVersion: window.SillyTavern?.getContext?.().version || "1.18+",
@@ -458,6 +459,7 @@ export class BridgeController extends EventTarget {
               "chat-import-v1",
               "local-direct-v1",
               "catalog-pages-v1",
+              "catalog-kind-filter-v1",
               "pull-cancel-v1",
               "pull-progress-v1",
               ...(supportsGzip() ? ["gzip"] : []),
@@ -497,6 +499,7 @@ export class BridgeController extends EventTarget {
             "chat-import-v1",
             "import-receipts-v1",
             "catalog-pages-v1",
+            "catalog-kind-filter-v1",
             "pull-cancel-v1",
             "pull-progress-v1",
             ...(this.canUseLocalDirect() ? ["local-direct-v1"] : []),
@@ -514,12 +517,21 @@ export class BridgeController extends EventTarget {
         }, 10_000);
         try {
           const items = await this.adapter.listResources(
-            message.kind === "chat" ? "chat" : undefined,
+            message.kind === "chat"
+              ? "chat"
+              : message.kind === "character" || message.kind === "userPersona"
+                ? message.kind
+                : undefined,
           );
           if (message.kind !== "chat") {
-            this.resourceSnapshot = new Map(
-              items.map((item) => [item.id, item]),
-            );
+            if (message.kind === "character" || message.kind === "userPersona") {
+              for (const [id, item] of this.resourceSnapshot) {
+                if (item.kind === message.kind) this.resourceSnapshot.delete(id);
+              }
+              for (const item of items) this.resourceSnapshot.set(item.id, item);
+            } else {
+              this.resourceSnapshot = new Map(items.map((item) => [item.id, item]));
+            }
           }
           const pageSize = this.srlCapabilities?.includes("catalog-pages-v1")
             ? 500

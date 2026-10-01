@@ -597,6 +597,45 @@ test("sends a capable client large catalogs in bounded pages", async () => {
   }
 });
 
+test("forwards character-only catalog requests to the adapter", async () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    location: { origin: "https://tavern.test" },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  let requestedKind;
+  const controller = new BridgeController({
+    async listResources(kind) {
+      requestedKind = kind;
+      return kind === "character"
+        ? [{ id: "character:one.png", kind: "character", name: "角色一" }]
+        : [{ id: "userPersona:user.png", kind: "userPersona", name: "用户" }];
+    },
+  });
+  controller.srlCapabilities = ["catalog-pages-v1", "catalog-kind-filter-v1"];
+  const messages = [];
+  controller.send = async (type, payload) => messages.push({ type, ...payload });
+  try {
+    await controller.handlePortMessage(
+      envelope("list-request", { requestId: "characters", kind: "character" }),
+    );
+    assert.equal(requestedKind, "character");
+    assert.deepEqual(
+      messages.find((message) => message.type === "list-response").items.map((item) => item.kind),
+      ["character"],
+    );
+    await controller.handlePortMessage(
+      envelope("list-request", { requestId: "personas", kind: "userPersona" }),
+    );
+    assert.equal(requestedKind, "userPersona");
+    assert.equal(controller.resourceSnapshot.size, 2);
+  } finally {
+    controller.destroy();
+    globalThis.window = previousWindow;
+  }
+});
+
 test("TauriTavern only uses HTTPS device relay and blocks all server-plugin transports", async () => {
   const previousWindow = globalThis.window;
   const previousFetch = globalThis.fetch;

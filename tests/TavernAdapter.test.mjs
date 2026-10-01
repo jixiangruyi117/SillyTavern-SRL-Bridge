@@ -489,6 +489,25 @@ test('creates missing persona keys with the Tavern default avatar, without trans
   )
 })
 
+test('returns character-only and persona-only catalogs without preparing unrelated resource groups', async () => {
+  const context = installContext({
+    powerUserSettings: {
+      personas: { 'alice.png': 'Alice' },
+      persona_descriptions: { 'alice.png': { description: '全局' } },
+    },
+  })
+  const adapter = new TavernAdapter()
+  assert.deepEqual(
+    (await adapter.listResources('character')).map(({ kind, fileName }) => [kind, fileName]),
+    [['character', 'test.png']],
+  )
+  assert.deepEqual(
+    (await adapter.listResources('userPersona')).map(({ kind, name }) => [kind, name]),
+    [['userPersona', 'Alice']],
+  )
+  assert.equal(context.powerUserSettings.persona_descriptions['alice.png'].description, '全局')
+})
+
 test('refreshes the Tavern persona list immediately after a successful import', async () => {
   const context = installContext()
   globalThis.fetch = async () => new Response('["new.png"]')
