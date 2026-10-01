@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildPersonaVariantPrompt,
   normalizePersonaVariantProfile,
+  resolvePersonaVariantPrompt,
   resolvePersonaVariantPreview,
 } from "../modules/PersonaVariantProfile.js";
 
-test("builds only the active character's explicit replacements and additions", () => {
+test("resolves the complete active persona with replacements, disabled sections, and additions", () => {
   const profile = {
     version: 1,
     sections: [
@@ -26,19 +26,20 @@ test("builds only the active character's explicit replacements and additions", (
     },
   };
 
-  const alice = buildPersonaVariantPrompt(profile, "alice.png");
-  assert.match(alice, /年龄：本角色卡下改为“30岁”/);
-  assert.match(alice, /职业：本角色卡下不采用/);
+  const alice = resolvePersonaVariantPrompt(profile, "alice.png");
+  assert.match(alice, /全局身份/);
+  assert.match(alice, /30岁/);
+  assert.doesNotMatch(alice, /20岁|画家/);
   assert.match(alice, /与 Alice 是多年好友/);
-  assert.doesNotMatch(alice, /身份|全局身份|与 Bob/);
-  assert.match(buildPersonaVariantPrompt(profile, "bob.png"), /与 Bob 初次见面/);
-  assert.equal(buildPersonaVariantPrompt(profile, "unknown.png"), "");
+  assert.doesNotMatch(alice, /与 Bob|覆盖全局设定|用户人设调整/);
+  assert.match(resolvePersonaVariantPrompt(profile, "bob.png"), /全局身份[\s\S]*20岁[\s\S]*画家[\s\S]*与 Bob 初次见面/);
+  assert.equal(resolvePersonaVariantPrompt(profile, "unknown.png"), "");
 });
 
 test("ignores malformed profile data", () => {
-  assert.equal(buildPersonaVariantPrompt({}, "alice.png"), "");
+  assert.equal(resolvePersonaVariantPrompt({}, "alice.png"), "");
   assert.equal(
-    buildPersonaVariantPrompt(
+    resolvePersonaVariantPrompt(
       { version: 1, sections: [], variants: { "alice.png": { addition: "  " } } },
       "alice.png",
     ),
@@ -108,10 +109,52 @@ test("selects a different character version for each chat", () => {
     },
   };
 
-  assert.match(buildPersonaVariantPrompt(profile, "alice.png", "chatA"), /成年后的用户设定/);
-  assert.match(buildPersonaVariantPrompt(profile, "alice.png", "chatB"), /校园中的用户设定/);
-  assert.match(buildPersonaVariantPrompt(profile, "alice.png", "unknown-chat"), /校园中的用户设定/);
-  assert.doesNotMatch(buildPersonaVariantPrompt(profile, "alice.png", "chatA"), /校园中的用户设定/);
+  assert.match(resolvePersonaVariantPrompt(profile, "alice.png", "chatA"), /全局[\s\S]*成年后的用户设定/);
+  assert.match(resolvePersonaVariantPrompt(profile, "alice.png", "chatB"), /全局[\s\S]*校园中的用户设定/);
+  assert.match(resolvePersonaVariantPrompt(profile, "alice.png", "unknown-chat"), /全局[\s\S]*校园中的用户设定/);
+  assert.doesNotMatch(resolvePersonaVariantPrompt(profile, "alice.png", "chatA"), /校园中的用户设定/);
+});
+
+test("an override replaces its section and an addition appends to the final persona", () => {
+  const profile = {
+    version: 1,
+    sections: [
+      { id: "base", name: "基础设定", text: "全局人设" },
+      { id: "voice", name: "说话方式", text: "全局说话方式" },
+    ],
+    variants: {
+      "alice.png": {
+        overrides: { voice: { mode: "replace", text: "只对 Alice 生效的说话方式" } },
+        addition: "Alice 专属补充",
+      },
+    },
+  };
+
+  assert.equal(
+    resolvePersonaVariantPrompt(profile, "alice.png"),
+    "全局人设\n只对 Alice 生效的说话方式\nAlice 专属补充",
+  );
+});
+
+test("uses updated global content unless that section has a character-specific replacement", () => {
+  const profile = {
+    version: 1,
+    sections: [
+      { id: "base", name: "基础设定", text: "我不是人" },
+      { id: "voice", name: "说话方式", text: "轻声说话" },
+    ],
+    variants: {
+      "alice.png": {
+        overrides: { voice: { mode: "replace", text: "大声说话" } },
+        addition: "普通人",
+      },
+    },
+  };
+
+  assert.equal(
+    resolvePersonaVariantPrompt(profile, "alice.png"),
+    "我不是人\n大声说话\n普通人",
+  );
 });
 
 test("previews the latest global text alongside a version-specific override", () => {

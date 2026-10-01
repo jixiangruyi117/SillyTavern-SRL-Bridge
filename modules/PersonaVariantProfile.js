@@ -110,7 +110,7 @@ function getVersionContent(profile, characterId, chatId) {
   return getPersonaVariantVersion(profile?.variants?.[characterId], chatId);
 }
 
-export function buildPersonaVariantPrompt(profile, characterId, chatId = "") {
+export function resolvePersonaVariantPrompt(profile, characterId, chatId = "") {
   if (
     !profile ||
     profile.version !== 1 ||
@@ -124,32 +124,23 @@ export function buildPersonaVariantPrompt(profile, characterId, chatId = "") {
   const variant = getVersionContent(profile, characterId, chatId);
   if (!variant) return "";
 
-  const instructions = [];
-  for (const section of profile.sections) {
-    if (!section || typeof section.id !== "string") continue;
+  const sections = profile.sections.flatMap((section) => {
+    if (!section || typeof section.id !== "string") return [];
     const override = variant.overrides?.[section.id];
-    if (override?.mode === "disable") {
-      instructions.push(
-        `- ${String(section.name || "全局设定")}：本角色卡下不采用全局设定中的这一项。`,
-      );
-    } else if (
-      override?.mode === "replace" &&
-      typeof override.text === "string" &&
-      override.text.trim()
-    ) {
-      instructions.push(
-        `- ${String(section.name || "全局设定")}：本角色卡下改为“${override.text.trim()}”，以此覆盖全局设定。`,
-      );
+    if (override?.mode === "disable") return [];
+    if (override?.mode === "replace") {
+      return typeof override.text === "string" && override.text.trim()
+        ? [override.text.trim()]
+        : [];
     }
-  }
+    return typeof section.text === "string" && section.text.trim()
+      ? [section.text.trim()]
+      : [];
+  });
 
   const addition = typeof variant.addition === "string" ? variant.addition.trim() : "";
-  if (!instructions.length && !addition) return "";
-  return [
-    "【当前角色卡下的用户人设调整】",
-    ...instructions,
-    ...(addition ? ["【仅对此角色卡追加】", addition] : []),
-  ].join("\n");
+  if (addition) sections.push(addition);
+  return sections.join("\n");
 }
 
 export function countPersonaVariantItems(profile, characterId) {
