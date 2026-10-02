@@ -1,4 +1,4 @@
-param([string]$Version = '0.3.56')
+param([string]$Version = '0.3.57')
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem

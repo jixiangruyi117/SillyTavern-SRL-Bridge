@@ -67,8 +67,8 @@ function createElement(tag, className, text = "") {
   return element;
 }
 
-function openPersonaModal(title) {
-  document.querySelector(".srl-persona-variant__modal-backdrop")?.remove();
+function openPersonaModal(panel, title) {
+  panel.querySelector(".srl-persona-variant__modal-backdrop")?.remove();
   const backdrop = createElement("div", "srl-persona-variant__modal-backdrop");
   const modal = createElement("section", "srl-persona-variant__modal");
   modal.setAttribute("role", "dialog");
@@ -79,7 +79,7 @@ function openPersonaModal(title) {
   const actions = createElement("div", "srl-persona-variant__modal-actions");
   modal.append(heading, body, actions);
   backdrop.append(modal);
-  document.body.append(backdrop);
+  panel.append(backdrop);
 
   const close = () => {
     document.removeEventListener("keydown", onKeydown, true);
@@ -117,7 +117,7 @@ function openPersonaModal(title) {
 }
 
 function editSectionOverride(panel, profile, characterId, version, section) {
-  const modal = openPersonaModal(`改写「${section.name || "全局设定"}」`);
+  const modal = openPersonaModal(panel, `改写「${section.name || "全局设定"}」`);
   const note = createElement("p", "srl-persona-variant__modal-note", "修改只对当前角色卡版本生效。保存后才会应用。");
   const textarea = createElement("textarea", "text_pole srl-persona-variant__modal-textarea");
   textarea.rows = 14;
@@ -143,7 +143,7 @@ function editSectionOverride(panel, profile, characterId, version, section) {
 }
 
 function confirmRestoreSection(panel, profile, characterId, version, section) {
-  const modal = openPersonaModal("恢复使用全局内容？");
+  const modal = openPersonaModal(panel, "恢复使用全局内容？");
   modal.body.append(createElement(
     "p",
     "srl-persona-variant__modal-note",
