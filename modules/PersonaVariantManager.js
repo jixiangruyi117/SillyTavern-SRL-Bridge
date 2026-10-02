@@ -7,6 +7,7 @@ import {
   countPersonaVariantItems,
   getPersonaVariantVersion,
   normalizePersonaVariantProfile,
+  resolvePersonaVariantPrompt,
   resolvePersonaVariantPreview,
 } from "./PersonaVariantProfile.js?v=0.3.53";
 
@@ -66,6 +67,104 @@ function createElement(tag, className, text = "") {
   return element;
 }
 
+function openPersonaModal(title) {
+  document.querySelector(".srl-persona-variant__modal-backdrop")?.remove();
+  const backdrop = createElement("div", "srl-persona-variant__modal-backdrop");
+  const modal = createElement("section", "srl-persona-variant__modal");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", title);
+  const heading = createElement("h3", "srl-persona-variant__modal-title", title);
+  const body = createElement("div", "srl-persona-variant__modal-body");
+  const actions = createElement("div", "srl-persona-variant__modal-actions");
+  modal.append(heading, body, actions);
+  backdrop.append(modal);
+  document.body.append(backdrop);
+
+  const close = () => {
+    document.removeEventListener("keydown", onKeydown, true);
+    backdrop.remove();
+  };
+  const onKeydown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...modal.querySelectorAll("button, textarea, input, select, [tabindex]:not([tabindex='-1'])")]
+      .filter((element) => !element.disabled && !element.hidden);
+    if (!focusable.length) {
+      event.preventDefault();
+      modal.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
+  document.addEventListener("keydown", onKeydown, true);
+  return { body, actions, close, modal };
+}
+
+function editSectionOverride(panel, profile, characterId, version, section) {
+  const modal = openPersonaModal(`改写「${section.name || "全局设定"}」`);
+  const note = createElement("p", "srl-persona-variant__modal-note", "修改只对当前角色卡版本生效。保存后才会应用。");
+  const textarea = createElement("textarea", "text_pole srl-persona-variant__modal-textarea");
+  textarea.rows = 14;
+  textarea.value = version.overrides?.[section.id]?.text ?? section.text;
+  textarea.setAttribute("aria-label", `${section.name || "全局设定"}的版本专属内容`);
+  modal.body.append(note, textarea);
+
+  const cancel = createElement("button", "srl-persona-variant__small-button", "取消");
+  cancel.type = "button";
+  cancel.addEventListener("click", modal.close);
+  const save = createElement("button", "srl-persona-variant__primary", "保存此版本设定");
+  save.type = "button";
+  save.addEventListener("click", () => {
+    if (textarea.value.trim()) version.overrides[section.id] = { mode: "replace", text: textarea.value };
+    else delete version.overrides[section.id];
+    modal.close();
+    saveVariantChange(panel, profile, characterId);
+    renderEditor(panel, getProfile(), characterId, selectedVersionId);
+  });
+  modal.actions.append(cancel, save);
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function confirmRestoreSection(panel, profile, characterId, version, section) {
+  const modal = openPersonaModal("恢复使用全局内容？");
+  modal.body.append(createElement(
+    "p",
+    "srl-persona-variant__modal-note",
+    `这会移除“${characterName(characterId)}”的“${version.name}”对此段的专属改写，之后改为使用最新的全局内容。此版本的其他设定不会改变。`,
+  ));
+
+  const cancel = createElement("button", "srl-persona-variant__small-button", "取消");
+  cancel.type = "button";
+  cancel.addEventListener("click", modal.close);
+  const restore = createElement("button", "srl-persona-variant__primary srl-persona-variant__modal-danger", "恢复使用全局内容");
+  restore.type = "button";
+  restore.addEventListener("click", () => {
+    delete version.overrides[section.id];
+    modal.close();
+    saveVariantChange(panel, profile, characterId);
+    renderEditor(panel, getProfile(), characterId, selectedVersionId);
+  });
+  modal.actions.append(cancel, restore);
+  cancel.focus();
+}
+
 function characterName(characterId) {
   const character = getContext()?.characters?.find((item) => item.avatar === characterId);
   return character?.name || characterId;
@@ -116,13 +215,7 @@ function variantHasContent(variant) {
 function updatePreview(panel, profile, characterId) {
   const content = panel.querySelector("[data-role='preview']");
   if (!content) return;
-  content.replaceChildren();
-  for (const line of resolvePersonaVariantPreview(profile, characterId, getChatKey())) {
-    content.append(createElement("p", "", line));
-  }
-  if (!content.childElementCount) {
-    content.append(createElement("p", "is-muted", "此版本当前使用完整的全局人设。"));
-  }
+  content.textContent = resolvePersonaVariantPrompt(profile, characterId, getChatKey());
 }
 
 function updateVariantList(panel, profile, keepCurrentPage = false) {
@@ -397,7 +490,7 @@ function renderEditor(panel, profile, characterId, requestedVersionId = "") {
 
   const overrides = createElement("section", "srl-persona-variant__overrides");
   overrides.append(createElement("h5", "", "只为此版本改写全局设定"));
-  overrides.append(createElement("p", "srl-persona-variant__hint", "编辑框会先填入全局原文；修改只对当前版本生效。"));
+  overrides.append(createElement("p", "srl-persona-variant__hint", "首次改写会带入全局原文；再次修改会带入当前版本内容。"));
 
   for (const section of profile.sections) {
     const existing = version.overrides?.[section.id];
@@ -409,50 +502,22 @@ function renderEditor(panel, profile, characterId, requestedVersionId = "") {
     }
 
     if (isReplacement) {
-      const replacement = createElement("textarea", "text_pole textarea_compact");
-      replacement.rows = 3;
-      replacement.value = existing.text || section.text;
-      replacement.placeholder = "填写仅对此版本生效的内容";
-      const replacementLabel = createElement("label", "srl-persona-variant__field");
-      replacementLabel.append(createElement("small", "", "此版本使用的内容（已填入全局原文，可直接修改）"));
-      replacementLabel.append(replacement);
-      replacement.addEventListener("input", () => {
-        if (replacement.value.trim()) {
-          version.overrides[section.id] = { mode: "replace", text: replacement.value };
-        } else {
-          delete version.overrides[section.id];
-        }
-        saveVariantChange(panel, profile, characterId);
-        if (!replacement.value.trim()) renderEditor(panel, getProfile(), characterId, selectedVersionId);
-      });
-      block.append(replacementLabel);
+      block.append(createElement("p", "srl-persona-variant__override-current", existing.text));
+      const edit = createElement("button", "srl-persona-variant__text-button", "修改此版本内容");
+      edit.type = "button";
+      edit.addEventListener("click", () => editSectionOverride(panel, profile, characterId, version, section));
+      block.append(edit);
       const restore = createElement("button", "srl-persona-variant__text-button", "恢复使用全局内容");
       restore.type = "button";
-      restore.addEventListener("click", () => {
-        const confirmed = window.confirm(
-          `确定恢复使用全局内容吗？这会移除“${character?.name || characterId}”的“${version.name}”对此段的专属改写。该版本的其他补充和全局人设不会改变。`,
-        );
-        if (!confirmed) return;
-        delete version.overrides[section.id];
-        saveVariantChange(panel, profile, characterId);
-        renderEditor(panel, getProfile(), characterId, selectedVersionId);
-      });
+      restore.addEventListener("click", () => confirmRestoreSection(panel, profile, characterId, version, section));
       block.append(restore);
     } else {
       const begin = createElement("button", "srl-persona-variant__text-button", "改写这段全局设定");
       begin.type = "button";
-      begin.addEventListener("click", () => {
-        version.overrides[section.id] = { mode: "replace", text: section.text };
-        renderEditor(panel, profile, characterId, selectedVersionId);
-        panel.querySelector("[data-section-editor]")?.focus();
-      });
+      begin.addEventListener("click", () => editSectionOverride(panel, profile, characterId, version, section));
       block.append(begin);
     }
-    if (isReplacement) {
-      block.dataset.section = section.id;
-      const replacement = block.querySelector("textarea");
-      if (replacement) replacement.dataset.sectionEditor = section.id;
-    }
+    block.dataset.section = section.id;
     overrides.append(block);
   }
   editor.append(overrides);
