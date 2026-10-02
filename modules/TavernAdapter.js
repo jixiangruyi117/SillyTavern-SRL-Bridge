@@ -122,6 +122,47 @@ function jsonSize(data) {
   return new Blob([JSON.stringify(data, null, 2)]).size
 }
 
+function personaBindingIds(descriptor) {
+  const ids = new Set(
+    (Array.isArray(descriptor.connections) ? descriptor.connections : [])
+      .filter((connection) => connection?.type === "character")
+      .map((connection) => connection.id)
+      .filter((id) => typeof id === "string" && id),
+  )
+  const variants = descriptor.srl_persona_profile?.variants
+  if (variants && typeof variants === "object") {
+    for (const id of Object.keys(variants)) ids.add(id)
+  }
+  return ids
+}
+
+function estimatePersonaExportSize(avatarId, name, descriptor, isDefault, charactersByAvatar) {
+  const exportDescriptor = structuredClone(descriptor)
+  const bindings =
+    exportDescriptor.srl_persona_character_bindings &&
+    typeof exportDescriptor.srl_persona_character_bindings === "object"
+      ? { ...exportDescriptor.srl_persona_character_bindings }
+      : {}
+  for (const id of personaBindingIds(exportDescriptor)) {
+    const character = charactersByAvatar.get(id)
+    if (!character) continue
+    bindings[id] = {
+      avatar: character.avatar,
+      name: character.name || character.avatar.replace(/\.png$/i, ""),
+      // SHA-256 is always 64 hexadecimal characters; the value does not affect JSON byte length.
+      hash: "0".repeat(64),
+    }
+  }
+  if (Object.keys(bindings).length) {
+    exportDescriptor.srl_persona_character_bindings = bindings
+  }
+  return jsonSize({
+    personas: { [avatarId]: name },
+    persona_descriptions: { [avatarId]: exportDescriptor },
+    ...(isDefault ? { default_persona: avatarId } : {}),
+  })
+}
+
 async function addSourceFileSizes(context, items) {
   if (!items.length) return
   try {
@@ -175,6 +216,12 @@ export class TavernAdapter {
   async listResources(kind) {
     const context = this.context;
     if (kind === "chat") return listChatResources(context);
+    const charactersByAvatar = new Map(
+      (Array.isArray(context.characters) ? context.characters : []).map((character) => [
+        character.avatar,
+        character,
+      ]),
+    )
     const personas = Object.entries(context.powerUserSettings?.personas ?? {})
       .filter(([, name]) => typeof name === "string")
       .map(([avatarId, name]) => ({
@@ -185,15 +232,13 @@ export class TavernAdapter {
         detail:
           context.powerUserSettings?.persona_descriptions?.[avatarId]?.title ||
           "用户人设",
-        size: jsonSize({
-          personas: { [avatarId]: name },
-          persona_descriptions: {
-            [avatarId]: context.powerUserSettings?.persona_descriptions?.[avatarId] ?? {},
-          },
-          ...(context.powerUserSettings?.default_persona === avatarId
-            ? { default_persona: avatarId }
-            : {}),
-        }),
+        size: estimatePersonaExportSize(
+          avatarId,
+          name,
+          context.powerUserSettings?.persona_descriptions?.[avatarId] ?? {},
+          context.powerUserSettings?.default_persona === avatarId,
+          charactersByAvatar,
+        ),
       }));
     if (kind === "userPersona") return personas;
     const characters = context.characters.map((character) => ({
@@ -411,16 +456,7 @@ export class TavernAdapter {
           ? settings.persona_descriptions[avatarId]
           : {};
       const descriptor = structuredClone(sourceDescriptor);
-      const bindingIds = new Set(
-        (Array.isArray(descriptor.connections) ? descriptor.connections : [])
-          .filter((connection) => connection?.type === "character")
-          .map((connection) => connection.id)
-          .filter((id) => typeof id === "string" && id),
-      );
-      const profileVariants = descriptor.srl_persona_profile?.variants;
-      if (profileVariants && typeof profileVariants === "object") {
-        for (const id of Object.keys(profileVariants)) bindingIds.add(id);
-      }
+      const bindingIds = personaBindingIds(descriptor)
       const bindings =
         descriptor.srl_persona_character_bindings &&
         typeof descriptor.srl_persona_character_bindings === "object"

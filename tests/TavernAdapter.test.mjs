@@ -429,6 +429,7 @@ test('lists and exports one user persona without avatars or unrelated settings a
   assert.equal(alice.detail, '备注')
   const file = await adapter.exportResource(alice)
   assert.equal(file.type, 'application/json')
+  assert.equal(alice.size, file.size)
   const exportedBinding = {
     avatar: 'test.png',
     name: '测试角色',
