@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { TavernAdapter } from '../modules/TavernAdapter.js'
+import { sha256 } from '../modules/Protocol.js'
 
 function installContext(overrides = {}) {
   const context = {
@@ -415,6 +416,11 @@ test('lists and exports one user persona without avatars or unrelated settings a
     unrelatedSecret: 'not-exported',
   }
   installContext({ powerUserSettings: settings })
+  const cardBytes = 'deterministic-character-card'
+  globalThis.fetch = async (url) => {
+    assert.equal(url, '/api/characters/export')
+    return new Response(cardBytes, { status: 200 })
+  }
   const before = JSON.stringify(settings)
   const adapter = new TavernAdapter()
   const items = (await adapter.listResources()).filter((item) => item.kind === 'userPersona')
@@ -423,9 +429,19 @@ test('lists and exports one user persona without avatars or unrelated settings a
   assert.equal(alice.detail, '备注')
   const file = await adapter.exportResource(alice)
   assert.equal(file.type, 'application/json')
+  const exportedBinding = {
+    avatar: 'test.png',
+    name: '测试角色',
+    hash: await sha256(new Blob([cardBytes])),
+  }
   assert.deepEqual(JSON.parse(await file.text()), {
     personas: { 'alice.png': 'Alice' },
-    persona_descriptions: { 'alice.png': descriptor },
+    persona_descriptions: {
+      'alice.png': {
+        ...descriptor,
+        srl_persona_character_bindings: { 'test.png': exportedBinding },
+      },
+    },
   })
   const bob = JSON.parse(
     await (await adapter.exportResource(items.find((item) => item.name === 'Bob'))).text(),

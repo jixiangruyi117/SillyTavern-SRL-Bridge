@@ -440,7 +440,9 @@ export class TavernAdapter {
           hash: await sha256(card),
         };
       }
-      descriptor.srl_persona_character_bindings = bindings;
+      if (Object.keys(bindings).length) {
+        descriptor.srl_persona_character_bindings = bindings;
+      }
       return jsonFile(
         {
           personas: { [avatarId]: settings.personas[avatarId] },
