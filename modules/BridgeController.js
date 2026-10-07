@@ -18,10 +18,10 @@ import {
   supportsGzip,
   gzipBlob,
   gunzipBlob,
-} from "./Protocol.js?v=0.3.44";
-import { RelayPort } from "./RelayPort.js?v=0.3.44";
-import { detectHostRuntime } from "./HostRuntime.js?v=0.3.44";
-import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.44";
+} from "./Protocol.js?v=0.3.58";
+import { RelayPort } from "./RelayPort.js?v=0.3.58";
+import { detectHostRuntime } from "./HostRuntime.js?v=0.3.58";
+import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.58";
 
 function isServerPluginRelayPath(value) {
   let pathname;
@@ -419,6 +419,7 @@ export class BridgeController extends EventTarget {
           "userAvatar",
           "persona-avatar-check-v1",
           "chat-archive-v1",
+          "chat-reading-scripts-v1",
           "chat-import-v1",
           "catalog-kind-filter-v1",
         ],
@@ -456,6 +457,7 @@ export class BridgeController extends EventTarget {
               "userAvatar",
               "persona-avatar-check-v1",
               "chat-archive-v1",
+              "chat-reading-scripts-v1",
               "chat-import-v1",
               "local-direct-v1",
               "catalog-pages-v1",
@@ -496,6 +498,7 @@ export class BridgeController extends EventTarget {
             "userAvatar",
             "persona-avatar-check-v1",
             "chat-archive-v1",
+            "chat-reading-scripts-v1",
             "chat-import-v1",
             "import-receipts-v1",
             "catalog-pages-v1",
@@ -703,7 +706,15 @@ export class BridgeController extends EventTarget {
         throw new Error(
           `找不到酒馆资源“${requested.id}”，请重新读取资源列表后重试`,
         );
-      const file = await this.adapter.exportResource(item, { signal });
+      const file = await this.adapter.exportResource(item, {
+        signal,
+        ...(item.kind === "chat"
+          ? {
+              readingScriptIds: requested.readingScriptIds ?? [],
+              carryReadingScripts: requested.carryReadingScripts !== false,
+            }
+          : {}),
+      });
       checkCancelled();
       await reportProgress(
         completed,

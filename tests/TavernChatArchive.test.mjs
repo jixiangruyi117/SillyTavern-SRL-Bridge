@@ -110,3 +110,126 @@ test('carries disabled/global/preset display rules and scope consent without exp
     assert.ok(!f.calls.some(call => call.url.includes('preset')))
   } finally { f.restore() }
 })
+
+test("chat export includes only selected global/preset sources and keeps saved JSONL unchanged", async () => {
+  const f = fixture();
+  try {
+    const phone = {
+      type: "script",
+      id: "phone",
+      name: "手机",
+      content: 'initializeGlobal("Phone",getVariables({type:"message"}));',
+      enabled: true,
+      data: { label: "原配置" },
+    };
+    f.context.extensionSettings = {
+      tavern_helper: {
+        script: {
+          scripts: [
+            phone,
+            { ...phone, id: "private", content: "unselected-private-code" },
+          ],
+        },
+      },
+      accountSecret: "do-not-export",
+    };
+    f.context.getPresetManager = () => ({
+      getCompletionPresetByName: async (name) =>
+        name === "选定预设"
+          ? {
+              extensions: {
+                tavern_helper: { scripts: [{ ...phone, id: "preset" }] },
+              },
+              api_key: "do-not-export",
+            }
+          : undefined,
+    });
+    const adapter = new TavernAdapter(),
+      item = (await adapter.listResources("chat"))[0];
+    const plain = await readChatArchive(await adapter.exportResource(item));
+    assert.deepEqual(plain.readingScripts, []);
+    const off = await readChatArchive(await adapter.exportResource(item, {carryReadingScripts: false, readingScriptIds: ['scriptGlobal:deleted']}));
+    assert.equal(off.carryReadingScripts, false);
+    assert.deepEqual(off.readingScripts, []);
+    assert.equal(await off.chat.text(), original.replace(/^\ufeff/, ''));
+
+    const selected = await readChatArchive(
+      await adapter.exportResource(item, {
+        readingScriptIds: [
+          "scriptGlobal:phone",
+          "scriptPreset:选定预设",
+          "scriptGlobal:phone",
+        ],
+      }),
+    );
+    assert.deepEqual(
+      selected.readingScripts.map((s) => s.sourceName),
+      ["手机", "选定预设"],
+    );
+    assert.equal(selected.readingScripts[0].scripts.content, phone.content);
+    assert.ok(
+      !JSON.stringify(selected.readingScripts).includes("do-not-export"),
+    );
+    assert.ok(
+      !JSON.stringify(selected.readingScripts).includes(
+        "unselected-private-code",
+      ),
+    );
+    assert.deepEqual(
+      new Uint8Array(await selected.chat.arrayBuffer()),
+      new TextEncoder().encode(original),
+    );
+    assert.ok(
+      f.calls.every(({ url }) =>
+        [
+          "/api/characters/chats",
+          "/api/chats/export",
+          "/api/characters/export",
+        ].includes(url),
+      ),
+    );
+    for (const ids of [
+      ["scriptGlobal:missing"],
+      ["scriptPreset:deleted"],
+      ["character:a.png"],
+      Array.from({ length: 9 }, () => "scriptGlobal:phone"),
+    ])
+      await assert.rejects(
+        adapter.exportResource(item, { readingScriptIds: ids }),
+        /不存在|找不到|最多 8/,
+      );
+    const signal = AbortSignal.abort(new Error("cancelled"));
+    await assert.rejects(
+      adapter.exportReadingScripts(["scriptGlobal:phone"], { signal }),
+      /cancelled/,
+    );
+  } finally {
+    f.restore();
+  }
+});
+test("controller forwards optional source selection without creating a second transfer channel", async () => {
+  const f = fixture();
+  const adapter = new TavernAdapter(),
+    controller = new BridgeController(adapter);
+  try {
+    const exports = [];
+    adapter.exportResource = async (item, options) => {
+      exports.push({ item, options });
+      return new File(["chat"], "chat.srlchat");
+    };
+    controller.sendFile = async () => {};
+    controller.send = async () => {};
+    await controller.sendResources("scripts", [
+      {
+        id: 'chat:["a.png","雨夜.jsonl"]',
+        readingScriptIds: ["scriptGlobal:phone"],
+      },
+    ]);
+    assert.deepEqual(exports[0].options.readingScriptIds, [
+      "scriptGlobal:phone",
+    ]);
+  } finally {
+    controller.destroy();
+    f.restore();
+  }
+});

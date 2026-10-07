@@ -4,6 +4,22 @@
 const MAGIC = 'SRLCHAT1'
 const HEADER_LIMIT = 16 * 1024
 export const REGEX_LIMIT = 2 * 1024 * 1024
+function validateReadingScripts(sources) {
+  if (
+    !Array.isArray(sources) ||
+    sources.length > 8 ||
+    sources.some(
+      (source) =>
+        !source ||
+        typeof source !== 'object' ||
+        typeof source.sourceName !== 'string' ||
+        source.sourceName.length > 255 ||
+        !source.scripts ||
+        typeof source.scripts !== 'object',
+    )
+  )
+    throw new Error('聊天随附脚本来源无效（最多 8 份）')
+}
 const MAX_ARCHIVE_SIZE = 256 * 1024 * 1024
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8', { fatal: true })
@@ -41,9 +57,24 @@ export function createChatArchive(card, chat, avatar, displayRules = [], regexCo
   const presetRules = regexContext.presetRules ?? []
   if (!Array.isArray(presetRules) || presetRules.length > 128)
     throw new Error('预设显示正则数量无效')
+  const carryReadingScripts = regexContext.carryReadingScripts
+  if (carryReadingScripts !== undefined && typeof carryReadingScripts !== 'boolean')
+    throw new Error('聊天脚本携带开关无效')
+  const readingScripts = carryReadingScripts === false ? [] : regexContext.readingScripts
+  if (readingScripts !== undefined) validateReadingScripts(readingScripts)
   const regex =
-    displayRules.length || presetRules.length
-      ? encoder.encode(JSON.stringify({ global: displayRules, preset: presetRules }))
+    displayRules.length ||
+    presetRules.length ||
+    readingScripts !== undefined ||
+    carryReadingScripts !== undefined
+      ? encoder.encode(
+          JSON.stringify({
+            ...(carryReadingScripts !== undefined ? { carryReadingScripts } : {}),
+            global: displayRules,
+            preset: presetRules,
+            ...(readingScripts !== undefined ? { readingScripts } : {}),
+          }),
+        )
       : new Uint8Array()
   const meta = {
     format: 'srl-chat-archive',
@@ -92,6 +123,11 @@ export async function readChatArchive(file) {
   const bundle = meta.regexBytes ? JSON.parse(await file.slice(end).text()) : {}
   const displayRules = Array.isArray(bundle) ? bundle : (bundle.global ?? [])
   const presetRules = Array.isArray(bundle) ? [] : (bundle.preset ?? [])
+  if (bundle.carryReadingScripts !== undefined && typeof bundle.carryReadingScripts !== 'boolean')
+    throw new Error('聊天脚本携带开关无效')
+  const hasReadingScriptSnapshot = Object.prototype.hasOwnProperty.call(bundle, 'readingScripts')
+  const readingScripts = hasReadingScriptSnapshot ? bundle.readingScripts : []
+  validateReadingScripts(readingScripts)
   if (
     !Array.isArray(displayRules) ||
     displayRules.length > 128 ||
@@ -113,6 +149,9 @@ export async function readChatArchive(file) {
     chat: new File([file.slice(split, end)], meta.chatName, { type: 'application/x-ndjson' }),
     displayRules,
     presetRules,
+    readingScripts,
+    hasReadingScriptSnapshot,
+    carryReadingScripts: bundle.carryReadingScripts !== false,
     hasRegexSnapshot: meta.regexBytes !== undefined,
     regexContext: {
       presetName:
@@ -123,4 +162,15 @@ export async function readChatArchive(file) {
       characterEnabled: meta.regexContext?.characterEnabled !== false,
     },
   }
+}
+
+/** Receiver preference for parcels: preserve originals and display rules, disable companion code. */
+export async function disableChatArchiveReadingScripts(file) {
+  const archive = await readChatArchive(file)
+  if (!archive.carryReadingScripts) return file
+  return createChatArchive(archive.card, archive.chat, archive.avatar, archive.displayRules, {
+    ...archive.regexContext,
+    presetRules: archive.presetRules,
+    carryReadingScripts: false,
+  })
 }

@@ -4,12 +4,12 @@ import {
   sha256,
   safeFileName,
   uniqueName,
-} from "./Protocol.js?v=0.3.44";
+} from "./Protocol.js?v=0.3.58";
 import {
   listChatResources,
   exportChatArchive,
   importChatRecord,
-} from "./TavernChatArchive.js?v=0.3.44";
+} from "./TavernChatArchive.js?v=0.3.58";
 
 function assertResponse(response, action) {
   if (response.ok) return response;
@@ -429,14 +429,18 @@ export class TavernAdapter {
     return response.json();
   }
 
-  async exportResource(item, { signal } = {}) {
+  async exportResource(item, { signal, readingScriptIds = [], carryReadingScripts = true } = {}) {
     const context = this.context;
     if (item.kind === RESOURCE_KINDS.CHAT)
       return exportChatArchive(
         context,
         item,
         (card) => this.exportResource(card, { signal }),
-        { signal },
+        {
+          signal,
+          carryReadingScripts,
+          readingScripts: carryReadingScripts ? await this.exportReadingScripts(readingScriptIds, { signal }) : [],
+        },
       );
     if (item.kind === RESOURCE_KINDS.USER_PERSONA) {
       const avatarId = item.id.slice("userPersona:".length);
@@ -456,17 +460,22 @@ export class TavernAdapter {
           ? settings.persona_descriptions[avatarId]
           : {};
       const descriptor = structuredClone(sourceDescriptor);
-      const bindingIds = personaBindingIds(descriptor)
+      const bindingIds = personaBindingIds(descriptor);
       const bindings =
         descriptor.srl_persona_character_bindings &&
         typeof descriptor.srl_persona_character_bindings === "object"
           ? { ...descriptor.srl_persona_character_bindings }
           : {};
       for (const id of bindingIds) {
-        const character = context.characters.find((entry) => entry.avatar === id);
+        const character = context.characters.find(
+          (entry) => entry.avatar === id,
+        );
         if (!character) continue;
         const card = await this.exportResource(
-          { kind: RESOURCE_KINDS.CHARACTER, id: `character:${character.avatar}` },
+          {
+            kind: RESOURCE_KINDS.CHARACTER,
+            id: `character:${character.avatar}`,
+          },
           { signal },
         );
         if (card.size > MAX_FILE_SIZE) continue;
@@ -616,6 +625,49 @@ export class TavernAdapter {
       return jsonFile(theme, name);
     }
     throw new Error("暂不支持这种资源类型");
+  }
+
+  async exportReadingScripts(ids, { signal } = {}) {
+    if (
+      !Array.isArray(ids) ||
+      ids.length > 8 ||
+      ids.some(
+        (id) =>
+          typeof id !== "string" ||
+          id.length > 512 ||
+          !/^(scriptGlobal|scriptPreset):.+$/.test(id),
+      )
+    )
+      throw new Error("请选择最多 8 份全局或预设阅读脚本");
+    const sources = [];
+    for (const id of new Set(ids)) {
+      signal?.throwIfAborted();
+      const kind = id.startsWith("scriptGlobal:")
+        ? "scriptGlobal"
+        : "scriptPreset";
+      const key = id.slice(kind.length + 1);
+      const tree =
+        kind === "scriptGlobal"
+          ? readHelperGlobalScripts(this.context.extensionSettings).find(
+              (entry, index) => String(entry?.id || index) === key,
+            )
+          : undefined;
+      if (kind === "scriptGlobal" && !tree)
+        throw new Error("所选阅读脚本已不存在，请重新选择");
+      const name =
+        kind === "scriptGlobal" ? helperTreeName(tree, "全局脚本") : key;
+      const file = await this.exportResource(
+        { id, kind, name, fileName: "阅读脚本.json" },
+        { signal },
+      );
+      if (file.size > 2 * 1024 * 1024)
+        throw new Error("阅读脚本超过 2 MiB，请减少来源");
+      sources.push({
+        sourceName: name,
+        scripts: JSON.parse(await file.text()),
+      });
+    }
+    return sources;
   }
 
   async importResource(file, kind, conflictPolicy = "copy", metadata = {}) {

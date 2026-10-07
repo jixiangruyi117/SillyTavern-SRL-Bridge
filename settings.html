@@ -113,6 +113,39 @@
               <button type="button" class="menu_button" data-parcel="load-chats">读取已保存聊天</button>
               <input class="text_pole" type="search" data-parcel="search" aria-label="搜索酒馆资源" placeholder="搜索资源名称" />
               <div data-parcel="list" class="srl-bridge-parcel-list"></div>
+              <details data-parcel="chat-scripts" hidden>
+                <summary>附带阅读脚本</summary>
+                <p>
+                  卡内脚本随聊天保留；可另选最多8份全局或预设脚本，仅附带到所选聊天，读了么默认关闭。
+                </p>
+                <button
+                  type="button"
+                  class="menu_button"
+                  data-parcel="load-scripts"
+                >
+                  读取可附带脚本
+                </button>
+                <input
+                  class="text_pole"
+                  type="search"
+                  data-parcel="script-search"
+                  aria-label="查找可附带脚本"
+                  placeholder="查找脚本"
+                />
+                <div
+                  data-parcel="script-list"
+                  class="srl-bridge-parcel-list"
+                ></div>
+                <button
+                  type="button"
+                  class="menu_button"
+                  data-parcel="more-scripts"
+                  hidden
+                >
+                  再显示50项
+                </button>
+                <small data-parcel="script-count">已选0 / 8</small>
+              </details>
               <button type="button" class="menu_button" data-parcel="more" hidden>再显示 50 项</button>
               <button type="button" class="menu_button" data-parcel="send">暂存所选资源</button>
             </div>

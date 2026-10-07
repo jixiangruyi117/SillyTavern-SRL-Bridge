@@ -2,14 +2,14 @@ import { eventSource, event_types } from "/scripts/events.js";
 import { user_avatar } from "/scripts/personas.js";
 import { power_user } from "/scripts/power-user.js";
 import { getCurrentChatId, saveSettingsDebounced } from "/script.js";
-import { refreshPersonaVariantPrompt } from "./PersonaVariantRuntime.js?v=0.3.53";
+import { refreshPersonaVariantPrompt } from "./PersonaVariantRuntime.js?v=0.3.58";
 import {
   countPersonaVariantItems,
   getPersonaVariantVersion,
   normalizePersonaVariantProfile,
   resolvePersonaVariantPrompt,
   resolvePersonaVariantPreview,
-} from "./PersonaVariantProfile.js?v=0.3.53";
+} from "./PersonaVariantProfile.js?v=0.3.58";
 
 const PANEL_ID = "srl-persona-variant-manager";
 const SAVED_PAGE_SIZE = 5;

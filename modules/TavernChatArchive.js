@@ -1,5 +1,5 @@
-import { createChatArchive } from "./ChatArchive.js?v=0.3.44";
-import { MAX_FILE_SIZE } from "./Protocol.js?v=0.3.44";
+import { createChatArchive } from "./ChatArchive.js?v=0.3.58";
+import { MAX_FILE_SIZE } from "./Protocol.js?v=0.3.58";
 
 function safeName(value) {
   return (
@@ -65,7 +65,7 @@ export async function exportChatArchive(
   context,
   item,
   exportCard,
-  { signal } = {},
+  { signal, readingScripts = [], carryReadingScripts = true } = {},
 ) {
   let identity;
   try {
@@ -141,6 +141,8 @@ export async function exportChatArchive(
     context.extensionSettings?.preset_allowed_regex?.[manager?.apiId];
   const characterAllowed = context.extensionSettings?.character_allowed_regex;
   return createChatArchive(card, chat, avatar, displayRules, {
+    readingScripts,
+    carryReadingScripts,
     presetRules,
     presetName,
     presetEnabled:
@@ -178,7 +180,9 @@ export async function importChatRecord(context, file, avatar) {
     body: JSON.stringify({ avatar_url: avatar }),
   });
   if (!prepared.ok)
-    throw new Error(`准备目标聊天目录失败（HTTP ${prepared.status}），资源库原件仍保留`);
+    throw new Error(
+      `准备目标聊天目录失败（HTTP ${prepared.status}），资源库原件仍保留`,
+    );
   const form = new FormData();
   form.append("avatar", body, file.name);
   form.append("avatar_url", avatar);
