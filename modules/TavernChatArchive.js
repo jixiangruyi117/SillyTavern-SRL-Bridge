@@ -170,6 +170,15 @@ export async function importChatRecord(context, file, avatar) {
     prefix[0] === 239 && prefix[1] === 187 && prefix[2] === 191
       ? file.slice(3)
       : file;
+  // ST 1.18's importer assumes the target chat directory already exists.
+  // Its normal read endpoint creates that directory without selecting or saving a chat.
+  const prepared = await fetch("/api/chats/get", {
+    method: "POST",
+    headers: context.getRequestHeaders(),
+    body: JSON.stringify({ avatar_url: avatar }),
+  });
+  if (!prepared.ok)
+    throw new Error(`准备目标聊天目录失败（HTTP ${prepared.status}），资源库原件仍保留`);
   const form = new FormData();
   form.append("avatar", body, file.name);
   form.append("avatar_url", avatar);
