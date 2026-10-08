@@ -58,6 +58,7 @@ export class BridgeController extends EventTarget {
     this.chunkAcks = new Map();
     this.resourceSnapshot = new Map();
     this.activePulls = new Map();
+    this.exportBatches = new Map();
     this.longOperationCount = 0;
     this.connectionGeneration = 0;
     this.messageChain = Promise.resolve();
@@ -361,6 +362,7 @@ export class BridgeController extends EventTarget {
             "error",
           ),
         );
+      return this.messageChain;
     };
     this.port.onerror = (error) => {
       this.disconnect(
@@ -463,6 +465,7 @@ export class BridgeController extends EventTarget {
               "catalog-pages-v1",
               "catalog-kind-filter-v1",
               "pull-cancel-v1",
+              "pull-export-batch-v1",
               "pull-progress-v1",
               ...(supportsGzip() ? ["gzip"] : []),
             ],
@@ -504,6 +507,7 @@ export class BridgeController extends EventTarget {
             "catalog-pages-v1",
             "catalog-kind-filter-v1",
             "pull-cancel-v1",
+            "pull-export-batch-v1",
             "pull-progress-v1",
             ...(this.canUseLocalDirect() ? ["local-direct-v1"] : []),
             ...(supportsGzip() ? ["gzip"] : []),
@@ -567,6 +571,18 @@ export class BridgeController extends EventTarget {
           existingIds: requested.filter((id) => available.has(id)),
         });
       } else if (message.type === "pull-request") {
+        const batchId = message.exportBatchId;
+        let exportContext = {};
+        if (batchId !== undefined) {
+          if (typeof batchId !== "string" || !/^[a-f0-9-]{36}$/u.test(batchId))
+            throw new Error("传输批次标识无效");
+          if (!this.exportBatches.has(batchId)) {
+            if (this.exportBatches.size >= MAX_ACTIVE_LONG_OPERATIONS)
+              throw new Error("已有未结束的传输批次，请结束或重新连接");
+            this.exportBatches.set(batchId, {});
+          }
+          exportContext = this.exportBatches.get(batchId);
+        }
         const controller = new AbortController();
         this.activePulls.set(message.requestId, controller);
         const started = this.runLongOperation(message, () =>
@@ -575,9 +591,12 @@ export class BridgeController extends EventTarget {
             message.items ?? [],
             message.localDirect === true,
             controller.signal,
+            exportContext,
           ),
         );
         if (!started) this.activePulls.delete(message.requestId);
+      } else if (message.type === "pull-batch-end") {
+        this.exportBatches.delete(message.exportBatchId);
       } else if (message.type === "pull-cancel") {
         const controller = this.activePulls.get(message.requestId);
         controller?.abort(new Error("资源库已取消接收"));
@@ -676,7 +695,7 @@ export class BridgeController extends EventTarget {
     return true;
   }
 
-  async sendResources(requestId, items, localDirect = false, signal) {
+  async sendResources(requestId, items, localDirect = false, signal, exportContext = {}) {
     const checkCancelled = () => {
       if (signal?.aborted) throw signal.reason || new Error("资源库已取消接收");
     };
@@ -708,6 +727,7 @@ export class BridgeController extends EventTarget {
         );
       const file = await this.adapter.exportResource(item, {
         signal,
+        exportContext,
         ...(item.kind === "chat"
           ? {
               readingScriptIds: requested.readingScriptIds ?? [],
@@ -719,7 +739,9 @@ export class BridgeController extends EventTarget {
       await reportProgress(
         completed,
         items.length,
-        `已准备 ${item.name}，正在传输`,
+        item.kind === "chat"
+          ? `已准备 ${file.name}，归档共 ${file.size} bytes（含随附资料），正在传输`
+          : `已准备 ${file.name}，文件共 ${file.size} bytes，正在传输`,
       );
       await this.sendFile(
         file,
@@ -752,13 +774,14 @@ export class BridgeController extends EventTarget {
     if (file.size > MAX_FILE_SIZE)
       throw new Error(`${file.name} 超过单文件 256 MB 限制`);
     const transferId = createId("st-file");
-    const useGzip =
+    let useGzip =
       Array.isArray(this.srlCapabilities) &&
       this.srlCapabilities.includes("gzip") &&
       supportsGzip() &&
       COMPRESSIBLE_KINDS.includes(kind) &&
       file.size > COMPRESS_MIN_BYTES;
-    const payload = useGzip ? await gzipBlob(file) : file;
+    let payload = useGzip ? await gzipBlob(file) : file;
+    if (payload.size >= file.size) { payload = file; useGzip = false; }
     let directSession;
     if (localDirect) {
       try {
@@ -883,9 +906,11 @@ export class BridgeController extends EventTarget {
     }
     let content = blob;
     if (transfer.meta.contentEncoding === "gzip") {
-      content = await gunzipBlob(blob);
       const rawSize = Number(transfer.meta.rawSize);
-      if (Number.isFinite(rawSize) && rawSize > 0 && content.size !== rawSize) {
+      if (!Number.isSafeInteger(rawSize) || rawSize < 1 || rawSize > MAX_FILE_SIZE)
+        throw new Error("压缩文件的原始大小无效");
+      content = await gunzipBlob(blob, rawSize);
+      if (content.size !== rawSize) {
         throw new Error(`${transfer.meta.name} 解压后大小与声明不符`);
       }
     }
@@ -1173,6 +1198,7 @@ export class BridgeController extends EventTarget {
     for (const controller of this.activePulls.values())
       controller.abort(new Error(reason));
     this.activePulls.clear();
+    this.exportBatches.clear();
     for (const pending of this.chunkAcks.values())
       pending.reject(new Error(reason));
     this.chunkAcks.clear();

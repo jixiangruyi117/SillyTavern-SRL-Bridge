@@ -13,7 +13,9 @@ const WAITING_TTL = 2 * 60 * 1000
 // Both sides poll at least every 20 seconds; expire a session if either side disappears.
 const ACTIVE_TTL = 75 * 1000
 const MAX_MESSAGE_BYTES = 512 * 1024
-const MAX_QUEUE_BYTES = 2 * 1024 * 1024
+// Eight 256 KiB chunks occupy ~2.67 MiB after Base64, plus envelopes.
+// Match the other relays so one negotiated window fits without queue-full errors.
+const MAX_QUEUE_BYTES = 4 * 1024 * 1024
 const sessions = new Map()
 const attempts = new Map()
 let cleanupTimer

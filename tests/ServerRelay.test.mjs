@@ -4,8 +4,53 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
+import { readFile } from 'node:fs/promises'
+import vm from 'node:vm'
 
 import { exit, init } from '../server-plugin/index.mjs'
+
+test('the plugin queue fits the maximum eight-chunk Base64 window', async () => {
+  const routes = new Map()
+  const router = Object.fromEntries(['get', 'post', 'put', 'delete'].map(method => [method, (path, handler) => routes.set(`${method.toUpperCase()} ${path}`, handler)]))
+  await init(router)
+  try {
+    const created = responseRecorder()
+    routes.get('POST /sessions')({body: {srlUrl: 'https://srl.example.test/'}}, created)
+    const joined = responseRecorder()
+    routes.get('GET /join-v2')({query: {code: created.body.code}, ip: '192.0.2.25'}, joined)
+    const data = Buffer.alloc(256 * 1024).toString('base64')
+    for (let index = 0; index < 8; index++) {
+      const response = responseRecorder()
+      routes.get('POST /messages')({body: {code: created.body.code, token: created.body.controllerToken, message: {type: 'file-chunk', index, data: {__srlBuffer: data}}}}, response)
+      assert.equal(response.statusCode, 204)
+    }
+  } finally { await exit() }
+})
+
+test('legacy relay shares one CSRF read and pipelines chunks after their file-start POST', async () => {
+  let csrfReads = 0, active = 0, maximum = 0, releaseStart
+  const calls = []
+  const context = vm.createContext({
+    URL, ArrayBuffer, Uint8Array, btoa, atob, Response,
+    document: {getElementById: () => ({addEventListener() {}, textContent: ''})},
+    window: {__SRL_RELAY__: {code: 'AB23CD45', token: 'token', srlUrl: 'https://srl.example/', srlOrigin: 'https://srl.example'}, location: {origin: 'https://tavern.example'}, opener: {closed: false, postMessage() {}}, addEventListener() {}, setTimeout() {}, setInterval() {}, clearInterval() {}},
+    fetch: async (url, init) => {
+      if (url === '/csrf-token') { csrfReads++; return Response.json({token: 'csrf'}) }
+      const type = JSON.parse(init.body).message.type; calls.push(type)
+      if (type === 'file-start') await new Promise(resolve => {releaseStart = resolve})
+      if (type === 'file-chunk') { active++; maximum = Math.max(maximum, active); await new Promise(resolve => setTimeout(resolve, 5)); active-- }
+      return new Response(null, {status: 204})
+    },
+  })
+  vm.runInContext(await readFile(new URL('../server-plugin/relay.js', import.meta.url), 'utf8'), context)
+  const api = vm.runInContext('({queueSend})', context)
+  const start = api.queueSend({type: 'file-start'})
+  const chunks = [api.queueSend({type: 'file-chunk', index: 0}), api.queueSend({type: 'file-chunk', index: 1})]
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(calls, ['file-start'])
+  releaseStart(); await Promise.all([start, ...chunks])
+  assert.equal(csrfReads, 1); assert.equal(maximum, 2)
+})
 
 function responseRecorder() {
   return {

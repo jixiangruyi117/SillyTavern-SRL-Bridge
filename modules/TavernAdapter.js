@@ -429,7 +429,7 @@ export class TavernAdapter {
     return response.json();
   }
 
-  async exportResource(item, { signal, readingScriptIds = [], carryReadingScripts = true } = {}) {
+  async exportResource(item, { signal, readingScriptIds = [], carryReadingScripts = true, exportContext } = {}) {
     const context = this.context;
     if (item.kind === RESOURCE_KINDS.CHAT)
       return exportChatArchive(
@@ -438,6 +438,7 @@ export class TavernAdapter {
         (card) => this.exportResource(card, { signal }),
         {
           signal,
+          exportContext,
           carryReadingScripts,
           readingScripts: carryReadingScripts ? await this.exportReadingScripts(readingScriptIds, { signal }) : [],
         },

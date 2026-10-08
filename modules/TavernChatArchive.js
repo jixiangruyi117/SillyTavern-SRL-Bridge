@@ -52,7 +52,7 @@ export async function listChatResources(context) {
             name: file.slice(0, -6),
             fileName: `${file.slice(0, -6)}.srlchat`,
             ...(sizeLabel ? { sizeLabel } : {}),
-            detail: `聊天记录 · ${card.name || card.avatar} · ${card.avatar}（随附角色卡）`,
+            detail: `聊天记录 · ${card.name || card.avatar} · ${card.avatar}（大小仅为聊天正文，传输另含角色卡与阅读资料）`,
           }),
         ),
       ),
@@ -65,7 +65,7 @@ export async function exportChatArchive(
   context,
   item,
   exportCard,
-  { signal, readingScripts = [], carryReadingScripts = true } = {},
+  { signal, readingScripts = [], carryReadingScripts = true, exportContext = {} } = {},
 ) {
   let identity;
   try {
@@ -77,12 +77,31 @@ export async function exportChatArchive(
   if (
     !safeName(avatar) ||
     !safeName(name) ||
-    !context.characters.some((card) => card.avatar === avatar) ||
-    !(await chatNames(context, avatar, false, signal)).some(
-      (file) => file.name === name,
-    )
+    !context.characters.some((card) => card.avatar === avatar)
   )
     throw new Error("聊天或所属角色已不存在，请重新读取目录");
+  // One explicit export batch owns one character snapshot, never a global cache.
+  if (exportContext.avatar !== avatar) {
+    exportContext.avatar = avatar;
+    exportContext.names = undefined;
+    exportContext.card = undefined;
+  }
+  exportContext.names ??= await chatNames(context, avatar, false, signal);
+  if (!exportContext.names.some((file) => file.name === name))
+    throw new Error("聊天或所属角色已不存在，请重新读取目录");
+  const [chat, card, regex] = await Promise.all([
+    exportChatFile(context, avatar, name, signal),
+    exportContext.card ?? exportCard({ id: `character:${avatar}`, kind: "character", name: avatar }),
+    exportDisplayRules(context, avatar),
+  ]);
+  signal?.throwIfAborted();
+  exportContext.card = card;
+  return createChatArchive(card, chat, avatar, regex.displayRules, {
+    ...regex.context, readingScripts, carryReadingScripts,
+  });
+}
+
+async function exportChatFile(context, avatar, name, signal) {
   const response = await fetch("/api/chats/export", {
     method: "POST",
     headers: context.getRequestHeaders(),
@@ -117,12 +136,10 @@ export async function exportChatArchive(
   const data = JSON.parse(await new Blob(parts).text());
   if (typeof data.result !== "string" || !data.result.trim())
     throw new Error("酒馆没有返回有效聊天原件");
-  const chat = new File([data.result], name, { type: "application/x-ndjson" });
-  const card = await exportCard({
-    id: `character:${avatar}`,
-    kind: "character",
-    name: avatar,
-  });
+  return new File([data.result], name, { type: "application/x-ndjson" });
+}
+
+async function exportDisplayRules(context, avatar) {
   // ST displays global rules before scoped card rules. Keep the exported originals untouched.
   const displayRules = (
     Array.isArray(context.extensionSettings?.regex)
@@ -140,16 +157,14 @@ export async function exportChatArchive(
   const presetAllowed =
     context.extensionSettings?.preset_allowed_regex?.[manager?.apiId];
   const characterAllowed = context.extensionSettings?.character_allowed_regex;
-  return createChatArchive(card, chat, avatar, displayRules, {
-    readingScripts,
-    carryReadingScripts,
+  return { displayRules, context: {
     presetRules,
     presetName,
     presetEnabled:
       Array.isArray(presetAllowed) && presetAllowed.includes(presetName),
     characterEnabled:
       Array.isArray(characterAllowed) && characterAllowed.includes(avatar),
-  });
+  } };
 }
 
 /** Use the host's JSONL importer and an explicitly confirmed avatar, never live-chat save. */

@@ -4,6 +4,55 @@ import assert from 'node:assert/strict'
 import { RelayPort } from '../modules/RelayPort.js'
 import { BridgeController } from '../modules/BridgeController.js'
 
+test('poll stores a batch before posting ACKs, with at most six ACK requests and control ordering intact', async () => {
+  const oldWindow = globalThis.window
+  globalThis.window = { location: { origin: 'https://tavern.example' } }
+  try {
+    const port = new RelayPort({}, { code: 'AB23CD45', controllerToken: 'token', reliableDelivery: true })
+    const handled = [], posted = []
+    let polls = 0, active = 0, maximum = 0
+    port.request = async (path, body) => {
+      if (path === 'poll') return polls++ ? { closed: true } : {
+        messages: [...Array.from({ length: 12 }, (_, index) => ({ type: 'file-chunk', index })), { type: 'file-end' }],
+        deliveryIds: Array.from({ length: 13 }, (_, index) => `delivery-${index}`),
+      }
+      posted.push(body.message.type)
+      if (body.message.type === 'file-chunk-ack') {
+        assert.equal(handled.length, 12)
+        assert.deepEqual(body.acknowledgements, Array.from({ length: 12 }, (_, index) => `delivery-${index}`))
+        active++; maximum = Math.max(maximum, active)
+        await new Promise(resolve => setTimeout(resolve, 5)); active--
+      } else assert.equal(active, 0)
+    }
+    port.onmessage = async ({ data }) => {
+      if (data.type === 'file-chunk') { handled.push(data.index); await port.postMessage({ type: 'file-chunk-ack', index: data.index }) }
+      else await port.postMessage({ type: 'file-result' })
+    }
+    await port.poll()
+    assert.equal(maximum, 6)
+    assert.equal(posted.filter(type => type === 'file-chunk-ack').length, 12)
+    assert.equal(posted.at(-1), 'file-result')
+  } finally { globalThis.window = oldWindow }
+})
+
+test('an ACK upload failure closes the receive loop instead of pretending transfer succeeded', async () => {
+  const oldWindow = globalThis.window
+  globalThis.window = { location: { origin: 'https://tavern.example' } }
+  try {
+    const port = new RelayPort({}, { code: 'AB23CD45', controllerToken: 'token' })
+    const failures = []
+    port.onerror = error => failures.push(error.message)
+    port.request = async path => {
+      if (path === 'poll') return { messages: [{ type: 'file-chunk' }] }
+      throw new Error('ACK upload failed')
+    }
+    port.onmessage = () => port.postMessage({ type: 'file-chunk-ack' })
+    await port.poll()
+    assert.equal(port.closed, true)
+    assert.ok(failures.includes('ACK upload failed'))
+  } finally { globalThis.window = oldWindow }
+})
+
 test('a negotiated relay retries a temporary upload with the same id, but reports an expired session immediately', async () => {
   const oldWindow = globalThis.window
   const oldFetch = globalThis.fetch

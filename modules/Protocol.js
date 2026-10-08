@@ -50,6 +50,7 @@ export function envelope(type, payload = {}) {
 }
 
 export const COMPRESSIBLE_KINDS = Object.freeze([
+  "chat",
   "worldBook",
   "preset",
   "regexGlobal",
@@ -77,10 +78,20 @@ export async function gzipBlob(blob) {
   ).blob();
 }
 
-export async function gunzipBlob(blob) {
-  return new Response(
-    blob.stream().pipeThrough(new DecompressionStream("gzip")),
-  ).blob();
+export async function gunzipBlob(blob, maxBytes = MAX_FILE_SIZE) {
+  const reader = blob.stream().pipeThrough(new DecompressionStream("gzip")).getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) { await reader.cancel(); throw new Error("解压后超过声明大小"); }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  return new Blob(chunks);
 }
 
 export async function sha256(blob) {

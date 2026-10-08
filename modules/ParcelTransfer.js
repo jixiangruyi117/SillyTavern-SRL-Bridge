@@ -1,7 +1,21 @@
-// Wire contract v1. Keep byte-identical to the extension's modules/ParcelTransfer.js.
+// Wire contracts v1 (raw) and v2 (compressed). Keep byte-identical to modules/ParcelTransfer.js.
 const CHUNK = 256 * 1024
 const LIMIT = 16 * 1024 * 1024
 const enc = new TextEncoder()
+const compressible = new Set([
+  'chat',
+  'worldBook',
+  'preset',
+  'theme',
+  'quickReply',
+  'userPersona',
+  'regexGlobal',
+  'regexCharacter',
+  'regexPreset',
+  'scriptGlobal',
+  'scriptCharacter',
+  'scriptPreset',
+])
 const kinds = new Set([
   'chat',
   'character',
@@ -65,7 +79,9 @@ async function request(base, action, body, headers, signal, fetcher = fetch) {
           { status: response.status },
         )
       }
-      return response.status === 204 ? new Response(null, { status: 204 }) : new Response(bytes)
+      // Keep the already bounded bytes; rebuilding Response made download
+      // consumers copy each encrypted chunk a second time.
+      return new Uint8Array(bytes)
     } catch (error) {
       checkCancelled(signal)
       if (abort.signal.aborted)
@@ -108,57 +124,103 @@ async function parallelChunks(count, signal, task) {
   }
 }
 function ticketParts(ticket) {
-  const match = /^SRL1\.([a-f0-9]{64})\.([A-Za-z0-9_-]{43})$/.exec(ticket.trim())
-  if (!match) throw new Error('请粘贴完整的 SRL1 提取口令；它与八位设备码不同')
-  const bytes = Uint8Array.from(atob(match[2].replace(/-/g, '+').replace(/_/g, '/') + '='), (c) =>
+  const match = /^SRL([12])\.([a-f0-9]{64})\.([A-Za-z0-9_-]{43})$/.exec(ticket.trim())
+  if (!match) throw new Error('请粘贴完整的 SRL1 或 SRL2 提取口令；它与八位设备码不同')
+  const bytes = Uint8Array.from(atob(match[3].replace(/-/g, '+').replace(/_/g, '/') + '='), (c) =>
     c.charCodeAt(0),
   )
-  return { code: match[1], key: bytes }
+  return { code: match[2], key: bytes, version: Number(match[1]) }
+}
+
+async function decompress(blob, maxBytes) {
+  if (typeof globalThis.DecompressionStream === 'undefined')
+    throw new Error('当前环境不能读取压缩暂存，请更新接收端')
+  const reader = blob.stream().pipeThrough(new globalThis.DecompressionStream('gzip')).getReader()
+  const chunks = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > maxBytes) {
+        await reader.cancel()
+        throw new Error('暂存解压后超过声明大小')
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  if (size !== maxBytes) throw new Error('暂存解压后大小与声明不符')
+  return new Blob(chunks)
 }
 
 export async function createParcel(
   base,
   files,
   progress = () => {},
-  { signal, fetcher = fetch } = {},
+  { signal, fetcher = fetch, compression = true } = {},
 ) {
   checkCancelled(signal)
   if (!files.length || files.length > 100) throw new Error('每次请选择 1～100 项资源')
   let total = 0
   const manifest = []
+  const payloads = []
+  let version = 1
   for (const item of files) {
     checkCancelled(signal)
     total += item.file.size
     if (total > LIMIT) throw new Error('加密暂存每次最多 16 MiB，请分批发送或使用实时互传')
     if (!kinds.has(item.kind)) throw new Error('不支持暂存此类资源')
+    let payload = item.file
+    if (
+      compression &&
+      typeof globalThis.CompressionStream !== 'undefined' &&
+      compressible.has(item.kind) &&
+      payload.size > 4096
+    ) {
+      const zipped = await new Response(
+        payload.stream().pipeThrough(new globalThis.CompressionStream('gzip')),
+      ).blob()
+      checkCancelled(signal)
+      if (zipped.size < payload.size) {
+        payload = zipped
+        version = 2
+      }
+    }
+    payloads.push(payload)
     manifest.push({
       name: item.file.name,
       displayName: item.displayName,
       kind: item.kind,
       targetName: item.targetName,
       type: item.file.type,
-      size: item.file.size,
+      size: payload.size,
+      ...(payload !== item.file ? { contentEncoding: 'gzip', rawSize: item.file.size } : {}),
       sha256: await hash(item.file),
     })
   }
-  const header = enc.encode(JSON.stringify({ version: 1, files: manifest }))
+  const header = enc.encode(JSON.stringify({ version, files: manifest }))
   const prefix = new Uint8Array(4)
   new DataView(prefix.buffer).setUint32(0, header.length)
-  const blob = new Blob([prefix, header, ...files.map((item) => item.file)])
+  const blob = new Blob([prefix, header, ...payloads])
   if (blob.size > LIMIT) throw new Error('暂存内容连同目录超过 16 MiB，请减少选择')
   const chunks = Math.ceil(blob.size / CHUNK)
   const keyBytes = crypto.getRandomValues(new Uint8Array(32))
   const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt'])
-  const created = await (
-    await request(
-      base,
-      'create',
-      { chunks, size: blob.size + chunks * 28 },
-      undefined,
-      signal,
-      fetcher,
-    )
-  ).json()
+  const created = JSON.parse(
+    new TextDecoder().decode(
+      await request(
+        base,
+        'create',
+        { chunks, size: blob.size + chunks * 28 },
+        undefined,
+        signal,
+        fetcher,
+      ),
+    ),
+  )
   if (!/^[a-f0-9]{64}$/.test(created.code)) throw new Error('暂存服务返回了无效口令')
   const code = created.code
   try {
@@ -191,7 +253,7 @@ export async function createParcel(
       .replace(/\//g, '_')
       .replace(/=+$/g, '')
     progress('已加密暂存，可以切换到另一端领取；30 分钟内有效')
-    return { ticket: `SRL1.${code}.${encodedKey}`, expiresAt: created.expiresAt }
+    return { ticket: `SRL${version}.${code}.${encodedKey}`, expiresAt: created.expiresAt }
   } catch (error) {
     // Do not delay cancellation behind a second network request; incomplete parcels expire.
     void request(base, 'remove', { code }, undefined, undefined, fetcher).catch(() => {})
@@ -206,8 +268,10 @@ export async function readParcel(
   { signal, fetcher = fetch } = {},
 ) {
   checkCancelled(signal)
-  const { code, key: bytes } = ticketParts(ticket)
-  const meta = await (await request(base, 'info', { code }, undefined, signal, fetcher)).json()
+  const { code, key: bytes, version } = ticketParts(ticket)
+  const meta = JSON.parse(
+    new TextDecoder().decode(await request(base, 'info', { code }, undefined, signal, fetcher)),
+  )
   if (
     !Number.isInteger(meta.chunks) ||
     meta.chunks < 1 ||
@@ -223,15 +287,7 @@ export async function readParcel(
   let completed = 0
   progress(`正在领取并校验 0 / ${meta.chunks}，请保持前台`)
   await parallelChunks(meta.chunks, signal, async (index, chunkSignal) => {
-    const response = await request(
-      base,
-      'download',
-      { code, index },
-      undefined,
-      chunkSignal,
-      fetcher,
-    )
-    const buffer = new Uint8Array(await response.arrayBuffer())
+    const buffer = await request(base, 'download', { code, index }, undefined, chunkSignal, fetcher)
     if (buffer.length < 28 || buffer.length > CHUNK + 28) throw new Error('暂存分块大小无效')
     let plain
     try {
@@ -259,7 +315,7 @@ export async function readParcel(
   if (size < 1 || size > 256 * 1024 || size + 4 > blob.size) throw new Error('暂存文件目录损坏')
   const manifest = JSON.parse(await blob.slice(4, 4 + size).text())
   if (
-    manifest.version !== 1 ||
+    manifest.version !== version ||
     !Array.isArray(manifest.files) ||
     !manifest.files.length ||
     manifest.files.length > 100
@@ -267,13 +323,14 @@ export async function readParcel(
     throw new Error('不支持的暂存格式')
   const files = []
   let offset = 4 + size
+  let rawTotal = 0
   for (const [index, item] of manifest.files.entries()) {
     checkCancelled(signal)
     if (
       !kinds.has(item.kind) ||
       typeof item.name !== 'string' ||
       !item.name ||
-      item.name.length > 200 ||
+      item.name.length > 255 ||
       /[/\\]/.test(item.name) ||
       [...item.name].some((char) => char.charCodeAt(0) < 32) ||
       !Number.isInteger(item.size) ||
@@ -284,7 +341,19 @@ export async function readParcel(
       (item.targetName !== undefined && typeof item.targetName !== 'string')
     )
       throw new Error('暂存资源条目无效')
-    const file = new File([blob.slice(offset, offset + item.size)], item.name, { type: item.type })
+    let content = blob.slice(offset, offset + item.size)
+    const rawSize = item.contentEncoding === 'gzip' ? item.rawSize : item.size
+    if (
+      (item.contentEncoding !== undefined && (version !== 2 || item.contentEncoding !== 'gzip')) ||
+      !Number.isSafeInteger(rawSize) ||
+      rawSize < 0 ||
+      rawTotal + rawSize > LIMIT
+    )
+      throw new Error('暂存解压后超过 16 MiB 或格式无效')
+    rawTotal += rawSize
+    if (item.contentEncoding === 'gzip') content = await decompress(content, rawSize)
+    checkCancelled(signal)
+    const file = new File([content], item.name, { type: item.type })
     if ((await hash(file)) !== item.sha256) throw new Error('暂存文件完整性校验失败')
     files.push({
       file,

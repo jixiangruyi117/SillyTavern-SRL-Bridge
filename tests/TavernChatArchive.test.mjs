@@ -3,6 +3,38 @@ import assert from 'node:assert/strict'
 import { TavernAdapter } from '../modules/TavernAdapter.js'
 import { BridgeController } from '../modules/BridgeController.js'
 import { readChatArchive, createChatArchive } from '../modules/ChatArchive.js'
+import { exportChatArchive } from '../modules/TavernChatArchive.js'
+
+test('reads chat, PNG and display rules concurrently, reuses only the current batch and refreshes later exports', async () => {
+  const f = fixture()
+  try {
+    let exports = 0, directoryReads = 0, active = 0, maximum = 0
+    const previous = globalThis.fetch
+    globalThis.fetch = async (url, init) => {
+      if (url === '/api/characters/chats') directoryReads++
+      if (url === '/api/chats/export') {
+        active++; maximum = Math.max(maximum, active)
+        await new Promise(resolve => setTimeout(resolve, 5)); active--
+      }
+      return previous(url, init)
+    }
+    const exportCard = async () => {
+      exports++; active++; maximum = Math.max(maximum, active)
+      await new Promise(resolve => setTimeout(resolve, 5)); active--
+      return new File(['PNG-' + exports], 'a.png')
+    }
+    const item = { id: 'chat:["a.png","雨夜.jsonl"]' }
+    const exportContext = {}
+    const first = await exportChatArchive(f.context, item, exportCard, { exportContext })
+    const second = await exportChatArchive(f.context, item, exportCard, { exportContext })
+    assert.equal(maximum, 2)
+    assert.equal(exports, 1); assert.equal(directoryReads, 1)
+    assert.deepEqual(await first.arrayBuffer(), await second.arrayBuffer())
+    const fresh = await exportChatArchive(f.context, item, exportCard)
+    assert.equal(exports, 2); assert.equal(directoryReads, 2)
+    assert.equal(await (await readChatArchive(fresh)).card.text(), 'PNG-2')
+  } finally { f.restore() }
+})
 
 const original = '\ufeff{"user_name":"旅人","character_name":"同名角色"}\r\n{"name":"同名角色","is_user":false,"mes":"{{user}} <status>原文</status>"}\r\n'
 function fixture() {

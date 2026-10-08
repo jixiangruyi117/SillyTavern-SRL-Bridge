@@ -47,6 +47,9 @@ export class RelayPort {
     this.acknowledgements = []
     this.delivered = new Set()
     this.retrying = 0
+    this.processingPoll = false
+    this.chunkAcknowledgements = []
+    this.ackFlush = null
   }
 
   start() {
@@ -55,16 +58,35 @@ export class RelayPort {
 
   postMessage(message) {
     if (this.closed) return Promise.reject(new Error('设备码中继已经关闭'))
+    // Chunks are validated/stored before this ACK. Flush one bounded window
+    // together rather than holding the receive loop behind each HTTP response.
+    if (this.processingPoll && message?.type === 'file-chunk-ack') {
+      this.chunkAcknowledgements.push(message)
+      return Promise.resolve()
+    }
     const task = this.sendChain.then(() =>
-      this.request('messages', {
+      this.flushChunkAcknowledgements().then(() => this.request('messages', {
         code: this.session.code,
         token: this.session.controllerToken,
         message: encode(message),
         ...(this.session.reliableDelivery ? { messageId: crypto.randomUUID() } : {}),
-      }),
+      })),
     )
     // Return the failure to this caller without poisoning subsequent operations.
     this.sendChain = task.catch(() => {})
+    return task
+  }
+
+  flushChunkAcknowledgements() {
+    if (this.ackFlush) return this.ackFlush
+    const run = async () => {
+      while (this.chunkAcknowledgements.length && !this.closed) {
+        const batch = this.chunkAcknowledgements.splice(0, 6)
+        await Promise.all(batch.map((message) => this.postFileChunk(message)))
+      }
+    }
+    const task = run().finally(() => { this.ackFlush = null })
+    this.ackFlush = task
     return task
   }
 
@@ -74,6 +96,9 @@ export class RelayPort {
       code: this.session.code,
       token: this.session.controllerToken,
       message: encode(message),
+      ...(message?.type === 'file-chunk-ack' && this.acknowledgements.length
+        ? { acknowledgements: [...this.acknowledgements] }
+        : {}),
       ...(this.session.reliableDelivery ? { messageId: crypto.randomUUID() } : {}),
     }).catch((error) => {
       if (!this.closed) this.onerror?.(error)
@@ -93,6 +118,8 @@ export class RelayPort {
         if (result?.closed) throw new Error('设备码中继已经关闭')
         if (this.closed) return
         this.acknowledgements = []
+        this.processingPoll = true
+        try {
         for (const [index, message] of (result?.messages ?? []).entries()) {
           const id = result?.deliveryIds?.[index]
           if (!id || !this.delivered.has(id)) await this.onmessage?.({ data: decode(message) })
@@ -102,6 +129,8 @@ export class RelayPort {
             if (this.delivered.size > 4096) this.delivered.delete(this.delivered.values().next().value)
           }
         }
+        } finally { this.processingPoll = false }
+        await this.flushChunkAcknowledgements()
       } catch (error) {
         if (!this.closed) this.onerror?.(error)
         this.closed = true
@@ -153,6 +182,7 @@ export class RelayPort {
     if (this.closed) return
     this.closed = true
     this.abort.abort()
+    this.chunkAcknowledgements.length = 0
     const body = {
       code: this.session.code,
       token: this.session.controllerToken,

@@ -175,10 +175,12 @@ export function attachParcelPanel(controller, getBase) {
         throw new Error("每次最多暂存 100 项，请分批发送");
       let bytes = 0;
       const files = [];
+      const exportContext = {};
       for (const item of inventory.filter((item) => selected.has(item.id))) {
         if (operation.signal.aborted) throw new Error("已取消暂存");
         const file = await controller.adapter.exportResource(item, {
           signal: operation.signal,
+          exportContext,
           ...(item.kind === "chat"
             ? { readingScriptIds: [...selectedScripts] }
             : {}),

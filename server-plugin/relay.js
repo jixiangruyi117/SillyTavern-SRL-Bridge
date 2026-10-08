@@ -57,8 +57,15 @@ function decode(value) {
   return value
 }
 
+let csrfRequest
 async function request(path, body) {
-  const csrf = await fetch('/csrf-token', { cache: 'no-store' }).then((response) => response.json())
+  // One relay document uses the same authenticated session; do not add a token
+  // round trip to every chunk and every long poll.
+  csrfRequest ||= fetch('/csrf-token', { cache: 'no-store' }).then((response) => {
+    if (!response.ok) throw new Error('无法读取中继请求令牌')
+    return response.json()
+  }).catch((error) => { csrfRequest = undefined; throw error })
+  const csrf = await csrfRequest
   const response = await fetch(`/api/plugins/srl-bridge/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf.token },
@@ -78,6 +85,14 @@ async function send(message) {
 }
 
 function queueSend(message) {
+  if (message.type === 'file-chunk' || message.type === 'file-chunk-ack') {
+    // The sender's existing chunk window provides backpressure.
+    return sendChain.then(() => send(message)).catch((error) => {
+      status.textContent = error instanceof Error ? error.message : '中继发送失败'
+      stopped = true
+      throw error
+    })
+  }
   sendChain = sendChain
     .then(() => send(message))
     .catch((error) => {

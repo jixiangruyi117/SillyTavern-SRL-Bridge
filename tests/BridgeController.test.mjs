@@ -3,7 +3,48 @@ import assert from "node:assert/strict";
 
 import { BridgeController } from "../modules/BridgeController.js";
 import { RelayPort } from "../modules/RelayPort.js";
-import { envelope, sha256 } from "../modules/Protocol.js";
+import { envelope, sha256, gunzipBlob } from "../modules/Protocol.js";
+
+test("compresses chat archives only for a capable peer and preserves bytes and payload hash", async () => {
+  const oldWindow = globalThis.window;
+  globalThis.window = { addEventListener() {}, removeEventListener() {} };
+  const controller = new BridgeController({ context: {} });
+  try {
+    const original = new File(['conversation original '.repeat(45000)], 'chat.srlchat');
+    const messages = []; let payload;
+    controller.send = async (type, meta) => messages.push({type, ...meta});
+    controller.sendFileChunks = async file => { payload = file; };
+    controller.srlCapabilities = ['gzip'];
+    await controller.sendFile(original, 'chat', 'request', 'chat');
+    assert.ok(payload.size < original.size / 3);
+    assert.equal(messages[0].sha256, await sha256(payload));
+    assert.equal(messages[0].rawSize, original.size);
+    assert.deepEqual(await (await gunzipBlob(payload)).arrayBuffer(), await original.arrayBuffer());
+    controller.srlCapabilities = []; messages.length = 0;
+    await controller.sendFile(original, 'chat', 'request', 'chat');
+    assert.equal(payload, original); assert.equal(messages[0].contentEncoding, undefined);
+  } finally { controller.destroy(); globalThis.window = oldWindow; }
+});
+
+test("batch export snapshots are negotiated, shared across requests and released at completion or disconnect", async () => {
+  const oldWindow = globalThis.window;
+  globalThis.window = { addEventListener() {}, removeEventListener() {} };
+  const controller = new BridgeController({ context: {} });
+  try {
+    const contexts = []; const batchId = crypto.randomUUID();
+    controller.send = async () => {};
+    controller.sendResources = async (...args) => contexts.push(args[4]);
+    for (let index = 0; index < 2; index++) {
+      await controller.handlePortMessage(envelope('pull-request', {requestId: 'request-' + index, exportBatchId: batchId, items: []}));
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(contexts.length, 2); assert.equal(contexts[0], contexts[1]);
+    await controller.handlePortMessage(envelope('pull-batch-end', {exportBatchId: batchId}));
+    assert.equal(controller.exportBatches.size, 0);
+    controller.exportBatches.set(batchId, {}); controller.disconnect();
+    assert.equal(controller.exportBatches.size, 0);
+  } finally { controller.destroy(); globalThis.window = oldWindow; }
+});
 
 test("local direct accepts Chinese filenames and keeps the original name in the envelope", async () => {
   const previousFetch = globalThis.fetch;
