@@ -4,12 +4,12 @@ import {
   sha256,
   safeFileName,
   uniqueName,
-} from "./Protocol.js?v=0.3.58";
+} from "./Protocol.js?v=0.3.59";
 import {
   listChatResources,
   exportChatArchive,
   importChatRecord,
-} from "./TavernChatArchive.js?v=0.3.58";
+} from "./TavernChatArchive.js?v=0.3.59";
 
 function assertResponse(response, action) {
   if (response.ok) return response;

@@ -1,4 +1,8 @@
-param([string]$Version = '0.3.58')
+param(
+  [string]$Version = '0.3.59',
+  [string]$OutputDirectory = '',
+  [switch]$KeepStaging
+)
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -10,7 +14,7 @@ function New-PortableZip {
   )
 
   if (Test-Path -LiteralPath $Target) {
-    Remove-Item -LiteralPath $Target -Force
+    throw "Release archive already exists: $Target"
   }
   $sourceRoot = [IO.Path]::GetFullPath($Source).TrimEnd([char[]]@('\', '/'))
   $archive = [IO.Compression.ZipFile]::Open(
@@ -33,21 +37,23 @@ function New-PortableZip {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$releaseRoot = Join-Path $repoRoot 'release'
-$stageRoot = Join-Path $releaseRoot ".stage-$Version"
+$releaseRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $repoRoot 'release' }
+$temporaryRoot = Join-Path $repoRoot '.codex-tmp'
+$stageRoot = Join-Path $temporaryRoot ("bridge-package-$Version-" + [guid]::NewGuid().ToString('N'))
 $extensionStage = Join-Path $stageRoot 'srl-bridge-extension\srl-bridge'
 $serverStage = Join-Path $stageRoot 'srl-bridge-server-plugin\srl-bridge'
 $completeStage = Join-Path $stageRoot 'srl-bridge-complete'
 
-$resolvedRelease = [IO.Path]::GetFullPath($releaseRoot)
+$resolvedTemporary = [IO.Path]::GetFullPath($temporaryRoot).TrimEnd('\') + '\'
 $resolvedStage = [IO.Path]::GetFullPath($stageRoot)
-if (-not $resolvedStage.StartsWith($resolvedRelease, [StringComparison]::OrdinalIgnoreCase)) {
+if (-not $resolvedStage.StartsWith($resolvedTemporary, [StringComparison]::OrdinalIgnoreCase)) {
   throw 'Unsafe staging directory.'
 }
 if (Test-Path -LiteralPath $stageRoot) {
-  Remove-Item -LiteralPath $stageRoot -Recurse -Force
+  throw 'Staging path already exists.'
 }
 
+New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $extensionStage, $serverStage, $completeStage | Out-Null
 $extensionFiles = @('index.js', 'manifest.json', 'settings.html', 'style.css', 'bridge.html', 'bridge.js', 'bridge.css')
 foreach ($name in $extensionFiles) {
@@ -59,7 +65,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'server-plugin\relay.js') -Destinati
 
 Copy-Item -LiteralPath (Split-Path -Parent $extensionStage) -Destination $completeStage -Recurse
 Copy-Item -LiteralPath (Split-Path -Parent $serverStage) -Destination $completeStage -Recurse
-Copy-Item -LiteralPath (Join-Path $releaseRoot 'INSTALL.md') -Destination (Join-Path $completeStage 'INSTALL.md')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'release\INSTALL.md') -Destination (Join-Path $completeStage 'INSTALL.md')
 New-Item -ItemType Directory -Force -Path (Join-Path $completeStage 'scripts') | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts\install-server-plugin.ps1') -Destination (Join-Path $completeStage 'scripts\install-server-plugin.ps1')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts\install-server-plugin.sh') -Destination (Join-Path $completeStage 'scripts\install-server-plugin.sh')
@@ -79,5 +85,22 @@ Copy-Item `
   -Destination (Join-Path $releaseRoot 'srl-bridge-server-plugin-latest.zip') `
   -Force
 
-Remove-Item -LiteralPath $stageRoot -Recurse -Force
+if (-not $KeepStaging) {
+  # Review the exact newly created staging tree before deleting ordinary files.
+  $entries = @(Get-ChildItem -LiteralPath $resolvedStage -Recurse -Force)
+  $protected = [IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::ReadOnly -bor [IO.FileAttributes]::Hidden -bor [IO.FileAttributes]::System
+  if ($entries | Where-Object { ($_.Attributes -band $protected) -ne 0 }) {
+    throw "Protected staging entry; retained: $resolvedStage"
+  }
+  foreach ($entry in $entries | Where-Object { -not $_.PSIsContainer }) {
+    Remove-Item -LiteralPath $entry.FullName -ErrorAction Stop
+  }
+  foreach ($entry in $entries | Where-Object { $_.PSIsContainer } | Sort-Object { $_.FullName.Length } -Descending) {
+    if (@(Get-ChildItem -LiteralPath $entry.FullName -Force).Count -ne 0) { throw 'Staging directory is not empty.' }
+    Remove-Item -LiteralPath $entry.FullName -ErrorAction Stop
+  }
+  Remove-Item -LiteralPath $resolvedStage -ErrorAction Stop
+} else {
+  Write-Output "Retained staging for verification: $resolvedStage"
+}
 Get-ChildItem -LiteralPath $releaseRoot -Filter "*v$Version.zip" | Select-Object Name, Length

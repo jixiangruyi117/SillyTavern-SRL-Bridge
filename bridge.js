@@ -1,4 +1,4 @@
-import { isBridgeEnvelope } from "./modules/Protocol.js?v=0.3.58";
+import { isBridgeEnvelope } from "./modules/Protocol.js?v=0.3.59";
 
 const params = new URLSearchParams(location.search);
 const target = params.get("target");

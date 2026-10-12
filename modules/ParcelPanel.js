@@ -2,9 +2,9 @@ import {
   createParcel,
   readParcel,
   removeParcel,
-} from "./ParcelTransfer.js?v=0.3.58";
-import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.58";
-import { sha256 } from "./Protocol.js?v=0.3.58";
+} from "./ParcelTransfer.js?v=0.3.59";
+import { reserveImport, completeImport } from "./ImportReceipts.js?v=0.3.59";
+import { sha256 } from "./Protocol.js?v=0.3.59";
 
 export function attachParcelPanel(controller, getBase) {
   const panel = document.getElementById("srl-bridge-parcels");
@@ -21,60 +21,7 @@ export function attachParcelPanel(controller, getBase) {
   let operation;
   let shown = 50;
   const selected = new Set();
-  const selectedScripts = new Set();
-  let scriptInventory = [];
-  let scriptShown = 50;
   const get = (name) => panel.querySelector(`[data-parcel="${name}"]`);
-  function renderScripts() {
-    get("script-count").textContent = `已选 ${selectedScripts.size} / 8`;
-    const matching = scriptInventory.filter((item) =>
-      item.name
-        .toLocaleLowerCase()
-        .includes(get("script-search").value.toLocaleLowerCase()),
-    );
-    get("script-list").replaceChildren();
-    for (const item of matching.slice(0, scriptShown)) {
-      const label = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = selectedScripts.has(item.id);
-      input.disabled = selectedScripts.size >= 8 && !input.checked;
-      input.dataset.readingScript = item.id;
-      input.addEventListener("change", () => {
-        if (input.checked) selectedScripts.add(item.id);
-        else selectedScripts.delete(item.id);
-        get("script-count").textContent = `已选${selectedScripts.size} / 8`;
-        for (const checkbox of get("script-list").querySelectorAll("input"))
-          checkbox.disabled = selectedScripts.size >= 8 && !checkbox.checked;
-      });
-      const name = document.createElement("span");
-      name.textContent = `${item.name} · ${item.detail || item.kind}`;
-      label.append(input, name);
-      get("script-list").append(label);
-    }
-    get("more-scripts").hidden = matching.length <= scriptShown;
-  }
-  get("load-scripts").addEventListener("click", () =>
-    run(async () => {
-      scriptInventory = (await controller.adapter.listResources()).filter(
-        (item) => ["scriptGlobal", "scriptPreset"].includes(item.kind),
-      );
-      for (const id of selectedScripts)
-        if (!scriptInventory.some((item) => item.id === id))
-          selectedScripts.delete(id);
-      scriptShown = 50;
-      renderScripts();
-      progress(`已读取${scriptInventory.length}份可附带脚本`);
-    }),
-  );
-  get("script-search").addEventListener("input", () => {
-    scriptShown = 50;
-    renderScripts();
-  });
-  get("more-scripts").addEventListener("click", () => {
-    scriptShown += 50;
-    renderScripts();
-  });
   for (const mode of ["receive", "send"])
     get(`mode-${mode}`).addEventListener("click", () => {
       if (busy) return;
@@ -142,14 +89,11 @@ export function attachParcelPanel(controller, getBase) {
         "button, input, select, textarea",
       ))
         input.disabled = false;
-      for (const input of get("script-list").querySelectorAll("input"))
-        input.disabled = selectedScripts.size >= 8 && !input.checked;
     }
   }
   panel.querySelector("[data-parcel=load]").addEventListener("click", () =>
     run(async () => {
       inventory = await controller.adapter.listResources();
-      get("chat-scripts").hidden = true;
       selected.clear();
       renderList();
       progress(`已读取 ${inventory.length} 项，请勾选要暂存的资源`);
@@ -158,8 +102,6 @@ export function attachParcelPanel(controller, getBase) {
   get("load-chats").addEventListener("click", () =>
     run(async () => {
       inventory = await controller.adapter.listResources("chat");
-      get("chat-scripts").hidden = false;
-      get("chat-scripts").open = false;
       selected.clear();
       shown = 50;
       renderList();
@@ -181,9 +123,6 @@ export function attachParcelPanel(controller, getBase) {
         const file = await controller.adapter.exportResource(item, {
           signal: operation.signal,
           exportContext,
-          ...(item.kind === "chat"
-            ? { readingScriptIds: [...selectedScripts] }
-            : {}),
         });
         bytes += file.size;
         if (bytes > 16 * 1024 * 1024)
