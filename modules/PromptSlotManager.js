@@ -1,7 +1,7 @@
 import { eventSource, event_types } from "/scripts/events.js";
 import { saveSettingsDebounced } from "/script.js";
 import { discoverCurrentPromptSlotMetadata, getCharacterPromptSlotValues } from "./PromptSlots.js";
-import { refreshPromptSlots } from "./PromptSlotRuntime.js?v=0.3.59";
+import { refreshPromptSlots } from "./PromptSlotRuntime.js?v=0.3.60";
 
 let saving = Promise.resolve();
 const saveTimers = new Map();
@@ -61,6 +61,7 @@ function render(snapshot) {
     ? `${character.name || character.avatar} · ${activePresetName(context)} · 当前角色卡`
     : `请先打开单角色聊天 · ${activePresetName(context)}`;
   const values = snapshot?.values || getCharacterPromptSlotValues(context?.extensionSettings, character?.avatar);
+  const inputsBySlot = new Map();
   for (const entry of entries) {
     const card = element("section", "srl-prompt-slots__entry");
     const title = element("h4", "", entry.name || entry.identifier);
@@ -74,7 +75,14 @@ function render(snapshot) {
       textarea.value = values[slot.id] || "";
       textarea.placeholder = "留空时，仅此变量位置为空，条目和其他变量保持不变";
       textarea.disabled = !character || !context?.extensionSettings;
-      textarea.addEventListener("input", () => scheduleSave(panel, character, context, slot.id, textarea.value));
+      if (!inputsBySlot.has(slot.id)) inputsBySlot.set(slot.id, []);
+      inputsBySlot.get(slot.id).push(textarea);
+      textarea.addEventListener("input", () => {
+        for (const peer of inputsBySlot.get(slot.id)) {
+          if (peer !== textarea) peer.value = textarea.value;
+        }
+        scheduleSave(panel, character, context, slot.id, textarea.value);
+      });
       label.append(textarea);
       card.append(label);
     }

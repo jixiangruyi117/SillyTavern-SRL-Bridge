@@ -1,5 +1,5 @@
 param(
-  [string]$Version = '0.3.59',
+  [string]$Version = '0.3.60',
   [string]$OutputDirectory = '',
   [switch]$KeepStaging
 )

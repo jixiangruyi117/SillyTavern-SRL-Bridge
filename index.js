@@ -1,14 +1,14 @@
-import { BridgeController } from "./modules/BridgeController.js?v=0.3.59";
-import { TavernAdapter } from "./modules/TavernAdapter.js?v=0.3.59";
-import { waitForHostReady } from "./modules/HostRuntime.js?v=0.3.59";
-import { attachParcelPanel } from "./modules/ParcelPanel.js?v=0.3.59";
+import { BridgeController } from "./modules/BridgeController.js?v=0.3.60";
+import { TavernAdapter } from "./modules/TavernAdapter.js?v=0.3.60";
+import { waitForHostReady } from "./modules/HostRuntime.js?v=0.3.60";
+import { attachParcelPanel } from "./modules/ParcelPanel.js?v=0.3.60";
 import {
   refreshPersonaVariantPrompt,
   startPersonaVariantRuntime,
-} from "./modules/PersonaVariantRuntime.js?v=0.3.59";
-import { startPersonaVariantManager } from "./modules/PersonaVariantManager.js?v=0.3.59";
-import { startPromptSlotManager } from "./modules/PromptSlotManager.js?v=0.3.59";
-import { startPromptSlotRuntime } from "./modules/PromptSlotRuntime.js?v=0.3.59";
+} from "./modules/PersonaVariantRuntime.js?v=0.3.60";
+import { startPersonaVariantManager } from "./modules/PersonaVariantManager.js?v=0.3.60";
+import { startPromptSlotManager } from "./modules/PromptSlotManager.js?v=0.3.60";
+import { startPromptSlotRuntime } from "./modules/PromptSlotRuntime.js?v=0.3.60";
 
 const SETTINGS_KEY = "srl-bridge";
 let controller;
