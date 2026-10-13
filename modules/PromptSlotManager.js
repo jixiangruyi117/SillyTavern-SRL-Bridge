@@ -1,6 +1,6 @@
 import { eventSource, event_types } from "/scripts/events.js";
 import { saveSettingsDebounced } from "/script.js";
-import { discoverPromptSlotMetadata, getCharacterPromptSlotValues } from "./PromptSlots.js";
+import { discoverCurrentPromptSlotMetadata, getCharacterPromptSlotValues } from "./PromptSlots.js";
 import { refreshPromptSlots } from "./PromptSlotRuntime.js?v=0.3.59";
 
 let saving = Promise.resolve();
@@ -19,13 +19,6 @@ function element(tag, className, text = "") {
 
 function activePresetName(context) {
   return context?.getPresetManager?.("openai")?.getSelectedPresetName?.() || "";
-}
-
-function readMetadata(context) {
-  const manager = context?.getPresetManager?.("openai");
-  const name = manager?.getSelectedPresetName?.();
-  const preset = name ? manager.getCompletionPresetByName?.(name) : null;
-  return discoverPromptSlotMetadata(preset);
 }
 
 function scheduleSave(panel, character, context, id, value) {
@@ -52,22 +45,22 @@ function scheduleSave(panel, character, context, id, value) {
   }, 500));
 }
 
-function render() {
+function render(snapshot) {
   const panel = document.getElementById("srl-prompt-slots");
   if (!panel) return;
   const context = getContext();
-  const entries = readMetadata(context);
+  const entries = snapshot?.entries || discoverCurrentPromptSlotMetadata(context);
   const character = context?.characters?.[context.characterId];
   const fields = panel.querySelector("[data-role='fields']");
   fields.replaceChildren();
-  panel.hidden = !entries.length;
-  if (!entries.length) return;
+  panel.hidden = !context || Boolean(context.mainApi && context.mainApi !== "openai");
+  if (panel.hidden) return;
 
   panel.dataset.avatar = character?.avatar || "";
   panel.querySelector("[data-role='character']").textContent = character
     ? `${character.name || character.avatar} · ${activePresetName(context)} · 当前角色卡`
     : `请先打开单角色聊天 · ${activePresetName(context)}`;
-  const values = getCharacterPromptSlotValues(context?.extensionSettings, character?.avatar);
+  const values = snapshot?.values || getCharacterPromptSlotValues(context?.extensionSettings, character?.avatar);
   for (const entry of entries) {
     const card = element("section", "srl-prompt-slots__entry");
     const title = element("h4", "", entry.name || entry.identifier);
@@ -79,7 +72,7 @@ function render() {
       const textarea = element("textarea", "text_pole textarea_compact");
       textarea.rows = 3;
       textarea.value = values[slot.id] || "";
-      textarea.placeholder = "留空时，此条预设内容不会注入";
+      textarea.placeholder = "留空时，仅此变量位置为空，条目和其他变量保持不变";
       textarea.disabled = !character || !context?.extensionSettings;
       textarea.addEventListener("input", () => scheduleSave(panel, character, context, slot.id, textarea.value));
       label.append(textarea);
@@ -91,6 +84,12 @@ function render() {
 
 export function startPromptSlotManager() {
   render();
+  const panel = document.getElementById("srl-prompt-slots");
+  panel?.querySelector("[data-role='refresh']")?.addEventListener("click", () => {
+    const snapshot = refreshPromptSlots();
+    render(snapshot);
+    panel.querySelector("[data-role='status']").textContent = snapshot.entries.length ? "已刷新" : "暂无占位变量";
+  });
   for (const event of [
     event_types.APP_READY,
     event_types.CHAT_CHANGED,

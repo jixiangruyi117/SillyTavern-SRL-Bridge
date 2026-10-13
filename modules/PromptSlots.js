@@ -36,6 +36,17 @@ export function getCharacterPromptSlotValues(extensionSettings, avatar) {
   return normalizePromptSlotValues(extensionSettings?.["srl-bridge"]?.promptSlotValues?.[avatar]);
 }
 
+export function discoverCurrentPromptSlotMetadata(context) {
+  if (!context || (context.mainApi && context.mainApi !== "openai")) return [];
+  // Live settings include prompt edits that have not been saved back to the preset.
+  if (Array.isArray(context.chatCompletionSettings?.prompts)) {
+    return discoverPromptSlotMetadata(context.chatCompletionSettings);
+  }
+  const manager = context.getPresetManager?.("openai");
+  const name = manager?.getSelectedPresetName?.();
+  return discoverPromptSlotMetadata(name ? manager.getCompletionPresetByName?.(name) : null);
+}
+
 export function discoverPromptSlotMetadata(preset) {
   const entries = normalizePromptSlotMetadata(preset?.extensions?.srl_prompt_slots);
   const byIdentifier = new Map(entries.map((entry) => [entry.identifier, {
@@ -70,32 +81,6 @@ export function resolvePromptSlotValue(values, id) {
   return typeof value === "string" ? value : "";
 }
 
-export function shouldInjectPromptSlotEntry(entry, values) {
-  return entry.slots.some((slot) => resolvePromptSlotValue(values, slot.id).trim());
-}
-
 export function replacePromptSlotMacro(id, _label, values) {
   return resolvePromptSlotValue(values, id);
-}
-
-export function reconcilePromptOrderVisibility(orderGroups, entries, values, controlledOrders) {
-  for (const [order, state] of controlledOrders) {
-    if (order.enabled !== state.applied) state.original = Boolean(order.enabled);
-    order.enabled = state.original;
-  }
-  controlledOrders.clear();
-
-  const visibility = new Map(entries.map((entry) => [
-    entry.identifier,
-    shouldInjectPromptSlotEntry(entry, values),
-  ]));
-  for (const promptOrder of orderGroups || []) {
-    for (const order of promptOrder?.order || []) {
-      if (!visibility.has(order.identifier)) continue;
-      const original = Boolean(order.enabled);
-      const enabled = original && visibility.get(order.identifier);
-      order.enabled = enabled;
-      controlledOrders.set(order, { original, applied: enabled });
-    }
-  }
 }

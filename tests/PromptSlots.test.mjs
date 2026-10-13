@@ -1,14 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  shouldInjectPromptSlotEntry,
+  discoverCurrentPromptSlotMetadata,
   discoverPromptSlotMetadata,
   getCharacterPromptSlotValues,
   normalizePromptSlotMetadata,
   normalizePromptSlotValues,
-  reconcilePromptOrderVisibility,
   replacePromptSlotMacro,
 } from "../modules/PromptSlots.js";
+
+test("reads newly edited and removed macros from live settings instead of the saved preset", () => {
+  const saved = { prompts: [{ identifier: "main", content: "{{srl_slot::slot-old1::旧变量}}" }] };
+  const context = {
+    mainApi: "openai",
+    chatCompletionSettings: { prompts: [{ identifier: "main", content: "{{srl_slot::slot-new1::新变量}}" }] },
+    getPresetManager: () => ({ getSelectedPresetName: () => "预设", getCompletionPresetByName: () => saved }),
+  };
+  assert.deepEqual(discoverCurrentPromptSlotMetadata(context)[0].slots, [{ id: "slot-new1", label: "新变量" }]);
+  context.chatCompletionSettings.prompts = [];
+  assert.deepEqual(discoverCurrentPromptSlotMetadata(context), [], "an empty live preset must not resurrect saved macros");
+  delete context.chatCompletionSettings;
+  assert.deepEqual(discoverCurrentPromptSlotMetadata(context)[0].slots, [{ id: "slot-old1", label: "旧变量" }]);
+  context.mainApi = "textgenerationwebui";
+  assert.deepEqual(discoverCurrentPromptSlotMetadata(context), []);
+  assert.deepEqual(discoverCurrentPromptSlotMetadata(null), []);
+});
 
 test("accepts the resource library schema and filters malformed slot entries", () => {
   assert.deepEqual(normalizePromptSlotMetadata({
@@ -27,13 +43,13 @@ test("accepts the resource library schema and filters malformed slot entries", (
   assert.deepEqual(normalizePromptSlotMetadata({ schemaVersion: 2, entries: [] }), []);
 });
 
-test("any filled slot shows the entry; macros without values become empty strings", () => {
-  const entry = { slots: [{ id: "style", label: "文风" }, { id: "status", label: "状态栏" }] };
-  assert.equal(shouldInjectPromptSlotEntry(entry, {}), false);
-  assert.equal(shouldInjectPromptSlotEntry(entry, { style: "  ", status: "\n" }), false);
-  assert.equal(shouldInjectPromptSlotEntry(entry, { style: "克制、简洁" }), true);
-  assert.equal(shouldInjectPromptSlotEntry(entry, { style: "", status: "<状态栏>在线</状态栏>" }), true);
-  assert.equal(replacePromptSlotMacro("style", "文风", { style: "克制、简洁" }), "克制、简洁");
+test("empty slots leave only their positions blank while other slots and surrounding text remain", () => {
+  const template = "文风：{{srl_slot::slot-0001::文风}}；状态：{{srl_slot::slot-0002::状态栏}}。";
+  const render = (values) => template.replace(/\{\{srl_slot::([^:]+)::([^}]+)\}\}/g,
+    (_, id, label) => replacePromptSlotMacro(id, label, values));
+  assert.equal(render({}), "文风：；状态：。");
+  assert.equal(render({ "slot-0002": "在线" }), "文风：；状态：在线。");
+  assert.equal(render({ "slot-0001": "克制、简洁", "slot-0002": "在线" }), "文风：克制、简洁；状态：在线。");
   assert.equal(replacePromptSlotMacro("missing", "文风", {}), "");
 });
 
@@ -71,18 +87,4 @@ test("keeps slot values local and separated by character avatar", () => {
   assert.deepEqual(getCharacterPromptSlotValues(settings, "alice.png"), { style: "Alice 文风" });
   assert.deepEqual(getCharacterPromptSlotValues(settings, "bob.png"), { style: "Bob 文风" });
   assert.deepEqual(getCharacterPromptSlotValues(settings, "missing.png"), {});
-});
-
-test("hides only slot entries and restores their original enabled state", () => {
-  const groups = [{ order: [
-    { identifier: "main", enabled: true },
-    { identifier: "optional", enabled: false },
-    { identifier: "unrelated", enabled: true },
-  ] }];
-  const entry = { identifier: "main", slots: [{ id: "style", label: "文风" }] };
-  const controlled = new Map();
-  reconcilePromptOrderVisibility(groups, [entry], {}, controlled);
-  assert.deepEqual(groups[0].order.map(({ enabled }) => enabled), [false, false, true]);
-  reconcilePromptOrderVisibility(groups, [entry], { style: "清爽" }, controlled);
-  assert.deepEqual(groups[0].order.map(({ enabled }) => enabled), [true, false, true]);
 });

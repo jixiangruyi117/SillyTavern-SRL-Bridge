@@ -1,19 +1,10 @@
 import { eventSource, event_types } from "/scripts/events.js";
-import { discoverPromptSlotMetadata, getCharacterPromptSlotValues, reconcilePromptOrderVisibility, replacePromptSlotMacro } from "./PromptSlots.js";
+import { discoverCurrentPromptSlotMetadata, getCharacterPromptSlotValues, replacePromptSlotMacro } from "./PromptSlots.js";
 
 let registered = false;
-const controlledOrders = new Map();
 
 function getContext() {
   return window.SillyTavern?.getContext?.();
-}
-
-function currentPresetMetadata(context) {
-  if (context?.mainApi && context.mainApi !== "openai") return [];
-  const manager = context?.getPresetManager?.("openai");
-  const presetName = manager?.getSelectedPresetName?.();
-  const preset = presetName ? manager.getCompletionPresetByName?.(presetName) : null;
-  return discoverPromptSlotMetadata(preset);
 }
 
 function currentValues(context) {
@@ -21,17 +12,11 @@ function currentValues(context) {
   return getCharacterPromptSlotValues(context?.extensionSettings, character?.avatar);
 }
 
-function applyEntryVisibility(context, metadata, values) {
-  const orders = context?.chatCompletionSettings?.prompt_order;
-  reconcilePromptOrderVisibility(orders, metadata, values, controlledOrders);
-}
-
 export function refreshPromptSlots() {
   const context = getContext();
   if (!context) return { entries: [], values: {} };
-  const entries = currentPresetMetadata(context);
+  const entries = discoverCurrentPromptSlotMetadata(context);
   const values = currentValues(context);
-  applyEntryVisibility(context, entries, values);
   document.dispatchEvent(new CustomEvent("srl-prompt-slots-updated", {
     detail: { entries, values, character: context.characters?.[context.characterId] || null },
   }));

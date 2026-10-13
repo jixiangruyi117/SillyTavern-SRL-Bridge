@@ -163,7 +163,15 @@
 <section id="srl-prompt-slots" class="srl-prompt-slots" hidden aria-labelledby="srl-prompt-slots-title">
   <header class="srl-prompt-slots__header">
     <div>
-      <h3 id="srl-prompt-slots-title">预设占位</h3>
+      <div class="srl-prompt-slots__title">
+        <h3 id="srl-prompt-slots-title">预设占位</h3>
+        <button type="button" class="srl-prompt-slots__refresh" data-role="refresh" title="重新读取预设占位变量" aria-label="重新读取预设占位变量">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M20 7v5h-5M4 17v-5h5" />
+            <path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3a7 7 0 0 0 11.5-1" />
+          </svg>
+        </button>
+      </div>
       <p data-role="character"></p>
     </div>
     <span data-role="status" role="status"></span>
