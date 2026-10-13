@@ -4,6 +4,7 @@ import { waitForHostReady } from "./modules/HostRuntime.js?v=0.3.59";
 import { attachParcelPanel } from "./modules/ParcelPanel.js?v=0.3.59";
 import {
   refreshPersonaVariantPrompt,
+  startPersonaVariantRuntime,
 } from "./modules/PersonaVariantRuntime.js?v=0.3.59";
 import { startPersonaVariantManager } from "./modules/PersonaVariantManager.js?v=0.3.59";
 import { startPromptSlotManager } from "./modules/PromptSlotManager.js?v=0.3.59";
@@ -13,6 +14,7 @@ const SETTINGS_KEY = "srl-bridge";
 let controller;
 
 startPersonaVariantManager();
+startPersonaVariantRuntime();
 
 function defaultSrlUrl(hostRuntime) {
   if (hostRuntime?.isTauriTavern) return "";
